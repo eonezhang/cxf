@@ -236,7 +236,7 @@ public final class ModelEncryptionSupport {
         
         newToken.setRefreshToken(getStringPart(parts[5]));
         newToken.setGrantType(getStringPart(parts[6]));
-        newToken.setAudience(getStringPart(parts[7]));
+        newToken.setAudiences(parseSimpleList(parts[7]));
         newToken.setParameters(parseSimpleMap(parts[8]));
         
         // Permissions
@@ -252,8 +252,10 @@ public final class ModelEncryptionSupport {
             }
             newToken.setScopes(perms);
         }
+        //Client verifier:
+        newToken.setClientCodeVerifier(parts[10]);
         //UserSubject:
-        newToken.setSubject(recreateUserSubject(parts[10]));
+        newToken.setSubject(recreateUserSubject(parts[11]));
                 
         return newToken;
     }
@@ -287,7 +289,7 @@ public final class ModelEncryptionSupport {
         state.append(tokenizeString(token.getGrantType()));
         // 7: audience
         state.append(SEP);
-        state.append(tokenizeString(token.getAudience()));
+        state.append(token.getAudiences().toString());
         // 8: other parameters
         state.append(SEP);
         // {key=value, key=value}
@@ -315,7 +317,10 @@ public final class ModelEncryptionSupport {
             }
         }
         state.append(SEP);
-        // 10: user subject
+        // 10: code verifier
+        state.append(tokenizeString(token.getClientCodeVerifier()));
+        state.append(SEP);
+        // 11: user subject
         tokenizeUserSubject(state, token.getSubject());
         
         return state.toString();
@@ -419,7 +424,7 @@ public final class ModelEncryptionSupport {
         // 5: audience
         state.append(tokenizeString(grant.getAudience()));
         state.append(SEP);
-        // 6: code verifier
+        // 6: code challenge
         state.append(tokenizeString(grant.getClientCodeChallenge()));
         state.append(SEP);
         // 7: approved scopes

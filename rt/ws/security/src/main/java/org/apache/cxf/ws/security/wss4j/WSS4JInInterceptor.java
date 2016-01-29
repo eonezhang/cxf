@@ -75,9 +75,9 @@ import org.apache.wss4j.common.crypto.ThreadLocalSecurityProvider;
 import org.apache.wss4j.common.ext.WSSecurityException;
 import org.apache.wss4j.common.saml.SamlAssertionWrapper;
 import org.apache.wss4j.dom.WSConstants;
-import org.apache.wss4j.dom.WSSConfig;
-import org.apache.wss4j.dom.WSSecurityEngine;
-import org.apache.wss4j.dom.WSSecurityEngineResult;
+import org.apache.wss4j.dom.engine.WSSConfig;
+import org.apache.wss4j.dom.engine.WSSecurityEngine;
+import org.apache.wss4j.dom.engine.WSSecurityEngineResult;
 import org.apache.wss4j.dom.handler.RequestData;
 import org.apache.wss4j.dom.handler.WSHandlerConstants;
 import org.apache.wss4j.dom.handler.WSHandlerResult;
@@ -338,17 +338,16 @@ public class WSS4JInInterceptor extends AbstractWSS4JInterceptor {
     
     private void configureAudienceRestriction(SoapMessage msg, RequestData reqData) {
         // Add Audience Restrictions for SAML
-        boolean enableAudienceRestriction = true;
-        String audRestrValStr = 
-            (String)SecurityUtils.getSecurityPropertyValue(SecurityConstants.AUDIENCE_RESTRICTION_VALIDATION, msg);
-        if (audRestrValStr != null) {
-            enableAudienceRestriction = Boolean.parseBoolean(audRestrValStr);
-        }
+        boolean enableAudienceRestriction = 
+            SecurityUtils.getSecurityPropertyBoolean(SecurityConstants.AUDIENCE_RESTRICTION_VALIDATION, msg, true);
         if (enableAudienceRestriction) {
             List<String> audiences = new ArrayList<>();
-            if (msg.getContextualProperty(org.apache.cxf.message.Message.REQUEST_URL) != null) {
-                audiences.add((String)msg.getContextualProperty(org.apache.cxf.message.Message.REQUEST_URL));
+            if (msg.get(org.apache.cxf.message.Message.REQUEST_URL) != null) {
+                audiences.add((String)msg.get(org.apache.cxf.message.Message.REQUEST_URL));
+            } else if (msg.get(org.apache.cxf.message.Message.REQUEST_URI) != null) {
+                audiences.add((String)msg.get(org.apache.cxf.message.Message.REQUEST_URI));
             }
+            
             if (msg.getContextualProperty("javax.xml.ws.wsdl.service") != null) {
                 audiences.add(msg.getContextualProperty("javax.xml.ws.wsdl.service").toString());
             }
@@ -730,7 +729,7 @@ public class WSS4JInInterceptor extends AbstractWSS4JInterceptor {
         if (!utWithCallbacks) {
             Map<QName, Object> profiles = new HashMap<QName, Object>(1);
             Validator validator = new NoOpValidator();
-            profiles.put(WSSecurityEngine.USERNAME_TOKEN, validator);
+            profiles.put(WSConstants.USERNAME_TOKEN, validator);
             return createSecurityEngine(profiles);
         }
         

@@ -67,7 +67,7 @@ public class Headers {
     public static final String HTTP_HEADERS_SETCOOKIE = "Set-Cookie";
     public static final String HTTP_HEADERS_LINK = "Link";
     public static final String EMPTY_REQUEST_PROPERTY = "org.apache.cxf.empty.request";
-    private static final String USE_ASYNC_PROPERTY = "use.async.http.conduit";
+    private static final String SET_EMPTY_REQUEST_CT_PROPERTY = "set.content.type.for.empty.request";
     private static final TimeZone TIME_ZONE_GMT = TimeZone.getTimeZone("GMT");
     private static final Logger LOG = LogUtils.getL7dLogger(Headers.class);
     
@@ -297,14 +297,29 @@ public class Headers {
      * @throws IOException
      */
     public void setProtocolHeadersInConnection(HttpURLConnection connection) throws IOException {
+        // If no Content-Type is set for empty requests then HttpUrlConnection:
+        // - sets a form Content-Type for empty POST 
+        // - replaces custom Accept value with */* if HTTP proxy is used
+                
+        boolean dropContentType = false;
         boolean emptyRequest = PropertyUtils.isTrue(message.get(EMPTY_REQUEST_PROPERTY));
-        // HttpUrlConnection sets a form Content-Type and completely loses custom Accept 
-        // if HTTP proxies are used if no Content-Type is set for empty requests 
-        boolean asyncConduitUsed = PropertyUtils.isTrue(message.get(USE_ASYNC_PROPERTY));
-        if (!asyncConduitUsed || !emptyRequest) {
-            String ct = emptyRequest ? "*/*" : determineContentType();
+        if (emptyRequest) { 
+            Object setCtForEmptyRequestProp = message.getContextualProperty(SET_EMPTY_REQUEST_CT_PROPERTY);
+            if (setCtForEmptyRequestProp != null) {
+                // If SET_EMPTY_REQUEST_CT_PROPERTY is set then do as a user prefers.
+                // CT will be dropped if setting CT for empty requests was explicitly disabled
+                dropContentType = PropertyUtils.isFalse(setCtForEmptyRequestProp);
+            } else if ("GET".equals((String)message.get(Message.HTTP_REQUEST_METHOD))) {
+                // otherwise if it is GET then just drop it
+                dropContentType = true;
+            }
+            
+        }
+        if (!dropContentType) {
+            String ct = emptyRequest && !headers.containsKey(Message.CONTENT_TYPE) ? "*/*" : determineContentType();
             connection.setRequestProperty(HttpHeaderHelper.CONTENT_TYPE, ct);
         }
+        
          
         transferProtocolHeadersToURLConnection(connection);
         logProtocolHeaders(Level.FINE);

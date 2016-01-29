@@ -59,7 +59,7 @@ import org.apache.wss4j.common.crypto.CryptoType;
 import org.apache.wss4j.common.ext.WSSecurityException;
 import org.apache.wss4j.common.principal.CustomTokenPrincipal;
 import org.apache.wss4j.dom.WSConstants;
-import org.apache.wss4j.dom.WSSecurityEngineResult;
+import org.apache.wss4j.dom.engine.WSSecurityEngineResult;
 import org.apache.wss4j.dom.handler.WSHandlerConstants;
 import org.apache.wss4j.dom.handler.WSHandlerResult;
 import org.apache.wss4j.dom.util.XmlSchemaDateFormat;
@@ -301,7 +301,7 @@ public class SAMLTokenRenewerPOPTest extends org.junit.Assert {
         assertTrue(providerResponse != null);
         assertTrue(providerResponse.getToken() != null && providerResponse.getTokenId() != null);
 
-        return providerResponse.getToken();
+        return (Element)providerResponse.getToken();
     }    
     
     private TokenProviderParameters createProviderParameters(

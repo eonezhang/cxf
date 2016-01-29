@@ -21,7 +21,7 @@ package demo.jaxrs.swagger.server;
 
 import com.fasterxml.jackson.jaxrs.json.JacksonJsonProvider;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.cxf.jaxrs.provider.MultipartProvider;
 import org.apache.cxf.jaxrs.servlet.CXFNonSpringJaxrsServlet;
 import org.apache.cxf.jaxrs.swagger.Swagger2Feature;
@@ -46,7 +46,7 @@ public class Server {
             getClass().getResource("/META-INF/resources/webjars/swagger-ui/2.1.0").toURI().toString());
         
         servletHolder.setInitParameter("redirects-list", 
-            "/ /index.html /.*[.]js /css/.* /images/.* lib/.* .*ico");
+            "/ /index.html /.*[.]js /css/.* /images/.* lib/.* .*ico /fonts/.*");
         servletHolder.setInitParameter("redirect-servlet-name", staticHolder.getName());
         servletHolder.setInitParameter("redirect-attributes", "javax.servlet.include.request_uri");
         servletHolder.setInitParameter("jaxrs.serviceClasses", Sample.class.getName());
@@ -54,10 +54,11 @@ public class Server {
         servletHolder.setInitParameter("jaxrs.providers", StringUtils.join(
             new String[] {
                 MultipartProvider.class.getName(),
-                JacksonJsonProvider.class.getName()
+                JacksonJsonProvider.class.getName(),
+                ApiOriginFilter.class.getName()
             }, ",") 
-        );                
-                
+        );
+
         server.setHandler(context);
         server.start();
         server.join();

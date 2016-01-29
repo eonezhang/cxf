@@ -28,6 +28,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -291,6 +292,8 @@ public final class ResourceUtils {
     private static void evaluateResourceClass(ClassResourceInfo cri, boolean enableStatic) {
         MethodDispatcher md = new MethodDispatcher();
         Class<?> serviceClass = cri.getServiceClass();
+        
+        boolean isFineLevelLoggable = LOG.isLoggable(Level.FINE);
         for (Method m : serviceClass.getMethods()) {
             
             Method annotatedMethod = AnnotationUtils.getAnnotatedMethod(serviceClass, m);
@@ -317,6 +320,11 @@ public final class ResourceUtils {
                         }
                     }
                 }
+            } else if (isFineLevelLoggable) {
+                LOG.fine(new org.apache.cxf.common.i18n.Message("NOT_RESOURCE_METHOD", 
+                                                                 BUNDLE, 
+                                                                 m.getDeclaringClass().getName(),
+                                                                 m.getName()).toString());
             }
         }
         cri.setMethodDispatcher(md);
@@ -535,7 +543,7 @@ public final class ResourceUtils {
     }
     
     public static List<UserResource> getUserResources(InputStream is) throws Exception {
-        Document doc = StaxUtils.read(new InputStreamReader(is, "UTF-8"));
+        Document doc = StaxUtils.read(new InputStreamReader(is, StandardCharsets.UTF_8));
         return getResourcesFromElement(doc.getDocumentElement());
     }
     

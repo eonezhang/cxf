@@ -199,6 +199,12 @@ public class RMCaptureOutInterceptor extends AbstractRMInterceptor<Message>  {
             getManager().initializeInterceptorChain(msg);
             //doneCaptureMessage(msg);
             captureMessage(msg);
+        } else if (isLastMessage) {
+            // got either the rm11 CS or the rm10 empty LM
+            RMStore store = getManager().getStore();
+            if (null != store) {
+                store.persistOutgoing(rmpsOut.getSourceSequence(), null);
+            }
         }
     }
     private void captureMessage(Message message) {
@@ -209,7 +215,7 @@ public class RMCaptureOutInterceptor extends AbstractRMInterceptor<Message>  {
     }    
     
     private class CaptureStart extends AbstractPhaseInterceptor<Message> {
-        public CaptureStart() {
+        CaptureStart() {
             super(Phase.PRE_PROTOCOL);
         }
 
@@ -224,7 +230,7 @@ public class RMCaptureOutInterceptor extends AbstractRMInterceptor<Message>  {
         }
     }
     private class CaptureEnd extends AbstractPhaseInterceptor<Message> {
-        public CaptureEnd() {
+        CaptureEnd() {
             super(Phase.WRITE_ENDING);
             addAfter(SoapOutInterceptor.SoapOutEndingInterceptor.class.getName());
         }

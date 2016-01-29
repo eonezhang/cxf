@@ -19,6 +19,7 @@
 
 package org.apache.cxf.ws.security.wss4j.policyhandlers;
 
+import java.security.PublicKey;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -48,8 +49,8 @@ import org.apache.wss4j.common.derivedKey.ConversationConstants;
 import org.apache.wss4j.common.ext.WSSecurityException;
 import org.apache.wss4j.common.saml.SamlAssertionWrapper;
 import org.apache.wss4j.dom.WSConstants;
-import org.apache.wss4j.dom.WSSConfig;
-import org.apache.wss4j.dom.WSSecurityEngineResult;
+import org.apache.wss4j.dom.engine.WSSConfig;
+import org.apache.wss4j.dom.engine.WSSecurityEngineResult;
 import org.apache.wss4j.dom.handler.WSHandlerConstants;
 import org.apache.wss4j.dom.handler.WSHandlerResult;
 import org.apache.wss4j.dom.message.WSSecBase;
@@ -135,23 +136,16 @@ public class AsymmetricBindingHandler extends AbstractBindingBuilder {
                     if (secToken == null) {
                         unassertPolicy(initiatorToken, "Security token is not found or expired");
                         return;
-                    } else {
-                        assertPolicy(initiatorToken);
-                        
-                        if (isTokenRequired(initiatorToken.getIncludeTokenType())) {
-                            Element el = secToken.getToken();
-                            this.addEncryptedKeyElement(cloneElement(el));
-                            attached = true;
-                        } 
+                    } else if (isTokenRequired(initiatorToken.getIncludeTokenType())) {
+                        Element el = secToken.getToken();
+                        this.addEncryptedKeyElement(cloneElement(el));
+                        attached = true;
                     }
                 } else if (initiatorToken instanceof SamlToken && isRequestor()) {
                     SamlAssertionWrapper assertionWrapper = addSamlToken((SamlToken)initiatorToken);
-                    if (assertionWrapper != null) {
-                        if (isTokenRequired(initiatorToken.getIncludeTokenType())) {
-                            addSupportingElement(assertionWrapper.toDOM(saaj.getSOAPPart()));
-                            storeAssertionAsSecurityToken(assertionWrapper);
-                        }
-                        assertPolicy(initiatorToken);
+                    if (assertionWrapper != null && isTokenRequired(initiatorToken.getIncludeTokenType())) {
+                        addSupportingElement(assertionWrapper.toDOM(saaj.getSOAPPart()));
+                        storeAssertionAsSecurityToken(assertionWrapper);
                     }
                 } else if (initiatorToken instanceof SamlToken) {
                     String tokenId = getSAMLToken();
@@ -276,24 +270,17 @@ public class AsymmetricBindingHandler extends AbstractBindingBuilder {
                 if (secToken == null) {
                     unassertPolicy(initiatorToken, "Security token is not found or expired");
                     return;
-                } else {
-                    assertPolicy(initiatorToken);
-                    
-                    if (isTokenRequired(initiatorToken.getIncludeTokenType())) {
-                        Element el = secToken.getToken();
-                        this.addEncryptedKeyElement(cloneElement(el));
-                        attached = true;
-                    } 
+                } else if (isTokenRequired(initiatorToken.getIncludeTokenType())) {
+                    Element el = secToken.getToken();
+                    this.addEncryptedKeyElement(cloneElement(el));
+                    attached = true;
                 }
             } else if (initiatorToken instanceof SamlToken && isRequestor()) {
                 try {
                     SamlAssertionWrapper assertionWrapper = addSamlToken((SamlToken)initiatorToken);
-                    if (assertionWrapper != null) {
-                        if (isTokenRequired(initiatorToken.getIncludeTokenType())) {
-                            addSupportingElement(assertionWrapper.toDOM(saaj.getSOAPPart()));
-                            storeAssertionAsSecurityToken(assertionWrapper);
-                        }
-                        assertPolicy(initiatorToken);
+                    if (assertionWrapper != null && isTokenRequired(initiatorToken.getIncludeTokenType())) {
+                        addSupportingElement(assertionWrapper.toDOM(saaj.getSOAPPart()));
+                        storeAssertionAsSecurityToken(assertionWrapper);
                     }
                 } catch (Exception e) {
                     String reason = e.getMessage();
@@ -308,7 +295,6 @@ public class AsymmetricBindingHandler extends AbstractBindingBuilder {
                     return;
                 }
             }
-            assertToken(initiatorToken);
         }
         
         List<WSEncryptionPart> sigParts = new ArrayList<>();
@@ -493,10 +479,13 @@ public class AsymmetricBindingHandler extends AbstractBindingBuilder {
                     if (!isRequestor() && securityToken != null 
                         && securityToken.getX509Certificate() != null) {
                         encr.setUseThisCert(securityToken.getX509Certificate());
+                    } else if (!isRequestor() && securityToken != null 
+                        && securityToken.getKey() instanceof PublicKey) {
+                        encr.setUseThisPublicKey((PublicKey)securityToken.getKey());
                     } else {
                         setEncryptionUser(encr, encrToken, false, crypto);
                     }
-                    if (!encr.isCertSet() && crypto == null) {
+                    if (!encr.isCertSet() && encr.getUseThisPublicKey() == null && crypto == null) {
                         unassertPolicy(recToken, "Missing security configuration. "
                                 + "Make sure jaxws:client element is configured " 
                                 + "with a " + SecurityConstants.ENCRYPT_PROPERTIES + " value.");
@@ -504,6 +493,7 @@ public class AsymmetricBindingHandler extends AbstractBindingBuilder {
                     AlgorithmSuiteType algType = algorithmSuite.getAlgorithmSuiteType();
                     encr.setSymmetricEncAlgorithm(algType.getEncryption());
                     encr.setKeyEncAlgo(algType.getAsymmetricKeyWrap());
+                    encr.setMGFAlgorithm(algType.getMGFAlgo());
                     encr.prepare(saaj.getSOAPPart(), crypto);
                     
                     Element encryptedKeyElement = encr.getEncryptedKeyElement();
@@ -654,6 +644,7 @@ public class AsymmetricBindingHandler extends AbstractBindingBuilder {
             dkSign.setSignatureAlgorithm(abinding.getAlgorithmSuite().getSymmetricSignature());
             dkSign.setSigCanonicalization(abinding.getAlgorithmSuite().getC14n().getValue());
             AlgorithmSuiteType algType = abinding.getAlgorithmSuite().getAlgorithmSuiteType();
+            dkSign.setDigestAlgorithm(algType.getDigest());
             dkSign.setDerivedKeyLength(algType.getSignatureDerivedKeyLength() / 8);
             dkSign.setCustomValueType(WSConstants.SOAPMESSAGE_NS11 + "#"
                     + WSConstants.ENC_KEY_VALUE_TYPE);
@@ -774,7 +765,6 @@ public class AsymmetricBindingHandler extends AbstractBindingBuilder {
         throws WSSecurityException {
         //Set up the encrypted key to use
         encrKey = this.getEncryptedKeyBuilder(token);
-        assertPolicy(wrapper);
         Element bstElem = encrKey.getBinarySecurityTokenElement();
         if (bstElem != null) {
             // If a BST is available then use it

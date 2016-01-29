@@ -52,6 +52,7 @@ import org.apache.cxf.common.i18n.BundleUtils;
 import org.apache.cxf.common.logging.LogUtils;
 import org.apache.cxf.common.util.PropertyUtils;
 import org.apache.cxf.common.util.StringUtils;
+import org.apache.cxf.helpers.FileUtils;
 import org.apache.cxf.helpers.IOUtils;
 import org.apache.cxf.resource.ResourceManager;
 import org.apache.cxf.transport.http.AbstractHTTPDestination;
@@ -117,6 +118,10 @@ public abstract class AbstractHTTPServlet extends HttpServlet implements Filter 
         dispatcherServletPath = servletConfig.getInitParameter(REDIRECT_SERVLET_PATH_PARAMETER);
         redirectAttributes = parseMapSequence(servletConfig.getInitParameter(REDIRECT_ATTRIBUTES_PARAMETER));
         useXForwardedHeaders = Boolean.valueOf(servletConfig.getInitParameter(USE_X_FORWARDED_HEADERS_PARAMETER));
+    }
+    
+    public void destroy() {
+        FileUtils.maybeDeleteDefaultTempDir();
     }
     
     protected void finalizeServletInit(ServletConfig servletConfig) {
@@ -402,7 +407,7 @@ public abstract class AbstractHTTPServlet extends HttpServlet implements Filter 
         private String pathInfo;
         private String servletPath;
         
-        public HttpServletRequestRedirectFilter(HttpServletRequest request, 
+        HttpServletRequestRedirectFilter(HttpServletRequest request, 
                                         String pathInfo,
                                         String servletPath,
                                         boolean customServletPath) {
@@ -451,9 +456,9 @@ public abstract class AbstractHTTPServlet extends HttpServlet implements Filter 
         private String originalProto;
         private String originalClientIp;
         
-        public HttpServletRequestXForwardedFilter(HttpServletRequest request, 
-                                                  String originalProto, 
-                                                  String originalIp) {
+        HttpServletRequestXForwardedFilter(HttpServletRequest request, 
+                                           String originalProto, 
+                                           String originalIp) {
             super(request);
             this.originalProto = originalProto;
             if (originalIp != null) {

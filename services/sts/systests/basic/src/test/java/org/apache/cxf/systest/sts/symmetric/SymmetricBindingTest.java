@@ -274,7 +274,7 @@ public class SymmetricBindingTest extends AbstractBusClientServerTestBase {
         
         // Make a successful request
         Client client = ((DispatchImpl<DOMSource>) dispatch).getClient();
-        client.getRequestContext().put("ws-security.sts.client", stsClient);
+        client.getRequestContext().put(SecurityConstants.STS_CLIENT, stsClient);
         
         if (test.isStreaming()) {
             client.getRequestContext().put(SecurityConstants.ENABLE_STREAMING_SECURITY, "true");
@@ -315,7 +315,7 @@ public class SymmetricBindingTest extends AbstractBusClientServerTestBase {
         
         // Make a successful request
         Client client = ((DispatchImpl<DOMSource>) dispatch).getClient();
-        client.getRequestContext().put("ws-security.sts.client", stsClient);
+        client.getRequestContext().put(SecurityConstants.STS_CLIENT, stsClient);
         //client.getRequestContext().put("find.dispatch.operation", Boolean.TRUE);
         
         
@@ -363,6 +363,6 @@ public class SymmetricBindingTest extends AbstractBusClientServerTestBase {
 
     private static void doubleIt(DoubleItPortType port, int numToDouble) {
         int resp = port.doubleIt(numToDouble);
-        assertEquals(numToDouble * 2 , resp);
+        assertEquals(numToDouble * 2, resp);
     }
 }

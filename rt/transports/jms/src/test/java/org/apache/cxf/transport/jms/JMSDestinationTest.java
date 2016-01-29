@@ -134,7 +134,7 @@ public class JMSDestinationTest extends AbstractJMSTester {
             char buffer[] = new char[5000];
             try {
                 int i = reader.read(buffer);
-                response = new String(buffer, 0 , i);
+                response = new String(buffer, 0, i);
             } catch (IOException e) {
                 assertFalse("Read the Destination recieved Message error ", false);
                 e.printStackTrace();
@@ -241,6 +241,7 @@ public class JMSDestinationTest extends AbstractJMSTester {
         waitForReceiveInMessage();
         verifyReceivedMessage(inMessage);
 
+        // wait for a while for the jms session recycling
         Thread.sleep(1000);
         conduit.close();
         destination.shutdown();

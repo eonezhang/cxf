@@ -26,6 +26,7 @@ import java.io.InputStreamReader;
 import java.net.Socket;
 import java.net.URL;
 import java.net.URLConnection;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -96,6 +97,36 @@ public class JAXRSClientServerSpringBookTest extends AbstractBusClientServerTest
     }
     
     @Test
+    public void testGetBookText() throws Exception {
+        final String address = "http://localhost:" + PORT + "/the/thebooks/bookstore/books/text"; 
+        WebClient wc = WebClient.create(address).accept("text/*");
+        assertEquals(406, wc.get().getStatus());
+        
+    }
+    
+    @Test
+    public void testEchoBookForm() throws Exception {
+        String address = "http://localhost:" + PORT + "/bus/thebooksform/bookform";
+        WebClient wc = WebClient.create(address);
+        Book b = 
+            wc.form(new Form().param("name", "CXFForm").param("id", "125"))
+                .readEntity(Book.class);
+        assertEquals("CXFForm", b.getName());
+        assertEquals(125L, b.getId());
+    }
+    @Test
+    public void testEchoBookFormXml() throws Exception {
+        String address = "http://localhost:" + PORT + "/bus/thebooksform/bookform";
+        WebClient wc = WebClient.create(address);
+        WebClient.getConfig(wc).getHttpConduit().getClient().setReceiveTimeout(10000000L);
+        Book b = 
+            wc.type("application/xml").post(new Book("CXFFormXml", 125L))
+                .readEntity(Book.class);
+        assertEquals("CXFFormXml", b.getName());
+        assertEquals(125L, b.getId());
+    }
+    
+    @Test
     public void testGetBookWebEx4() throws Exception {
         final String address = "http://localhost:" + PORT + "/the/thebooks%203/bookstore/books/webex2"; 
         doTestGetBookWebEx(address);
@@ -140,7 +171,7 @@ public class JAXRSClientServerSpringBookTest extends AbstractBusClientServerTest
     public void testGetWadlFromWadlLocation() throws Exception {
         String address = "http://localhost:" + PORT + "/the/generated";    
         WebClient client = WebClient.create(address + "/bookstore" + "?_wadl&_type=xml");
-        Document doc = StaxUtils.read(new InputStreamReader(client.get(InputStream.class), "UTF-8"));
+        Document doc = StaxUtils.read(new InputStreamReader(client.get(InputStream.class), StandardCharsets.UTF_8));
         List<Element> resources = checkWadlResourcesInfo(doc, address, "/schemas/book.xsd", 2);
         assertEquals("", resources.get(0).getAttribute("type"));
         String type = resources.get(1).getAttribute("type");
@@ -258,7 +289,7 @@ public class JAXRSClientServerSpringBookTest extends AbstractBusClientServerTest
                               String refAttrName) throws Exception {
         WebClient client = WebClient.create(address + schemaSegment);
         WebClient.getConfig(client).getHttpConduit().getClient().setReceiveTimeout(10000000L);
-        Document doc = StaxUtils.read(new InputStreamReader(client.get(InputStream.class), "UTF-8"));
+        Document doc = StaxUtils.read(new InputStreamReader(client.get(InputStream.class), StandardCharsets.UTF_8));
         Element root = doc.getDocumentElement();
         assertEquals(Constants.URI_2001_SCHEMA_XSD, root.getNamespaceURI());
         assertEquals("schema", root.getLocalName());
@@ -277,7 +308,7 @@ public class JAXRSClientServerSpringBookTest extends AbstractBusClientServerTest
         WebClient client = WebClient.create(requestTypeURI);
         WebClient.getConfig(client).getHttpConduit().getClient().setReceiveTimeout(1000000);
         
-        Document doc = StaxUtils.read(new InputStreamReader(client.get(InputStream.class), "UTF-8"));
+        Document doc = StaxUtils.read(new InputStreamReader(client.get(InputStream.class), StandardCharsets.UTF_8));
         Element root = doc.getDocumentElement();
         assertEquals(WadlGenerator.WADL_NS, root.getNamespaceURI());
         assertEquals("application", root.getLocalName());
@@ -300,7 +331,7 @@ public class JAXRSClientServerSpringBookTest extends AbstractBusClientServerTest
     private List<Element> checkWadlResourcesInfo(String baseURI, String requestURI, 
                                         String schemaRef, int size) throws Exception {
         WebClient client = WebClient.create(requestURI + "?_wadl&_type=xml");
-        Document doc = StaxUtils.read(new InputStreamReader(client.get(InputStream.class), "UTF-8"));
+        Document doc = StaxUtils.read(new InputStreamReader(client.get(InputStream.class), StandardCharsets.UTF_8));
         return checkWadlResourcesInfo(doc, baseURI, schemaRef, size);
     }
     private List<Element> checkWadlResourcesInfo(Document doc, String baseURI, String schemaRef, int size) 

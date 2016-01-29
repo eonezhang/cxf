@@ -45,7 +45,7 @@ import org.apache.cxf.sts.service.EncryptionProperties;
 import org.apache.cxf.sts.token.provider.SAMLTokenProvider;
 import org.apache.cxf.sts.token.provider.TokenProviderParameters;
 import org.apache.cxf.sts.token.provider.TokenProviderResponse;
-import org.apache.cxf.sts.token.realm.SAMLRealm;
+import org.apache.cxf.sts.token.realm.RealmProperties;
 import org.apache.cxf.systest.sts.common.CommonCallbackHandler;
 import org.apache.cxf.systest.sts.common.SecurityTestUtil;
 import org.apache.cxf.systest.sts.deployment.STSServer;
@@ -66,7 +66,7 @@ import org.apache.wss4j.common.saml.SAMLKeyInfo;
 import org.apache.wss4j.common.saml.SamlAssertionWrapper;
 import org.apache.wss4j.dom.WSConstants;
 import org.apache.wss4j.dom.WSDocInfo;
-import org.apache.wss4j.dom.WSSecurityEngineResult;
+import org.apache.wss4j.dom.engine.WSSecurityEngineResult;
 import org.apache.wss4j.dom.handler.RequestData;
 import org.apache.wss4j.dom.processor.Processor;
 import org.apache.wss4j.dom.processor.SAMLTokenProcessor;
@@ -554,7 +554,7 @@ public class IssueUnitTest extends AbstractBusClientServerTestBase {
      */
     private Element createSAMLAssertion(
         String tokenType, Crypto crypto, String signatureUsername, CallbackHandler callbackHandler,
-        Map<String, SAMLRealm> realms, String user, String issuer
+        Map<String, RealmProperties> realms, String user, String issuer
     ) throws WSSecurityException {
         SAMLTokenProvider samlTokenProvider = new SAMLTokenProvider();
         samlTokenProvider.setRealmMap(realms);
@@ -571,7 +571,7 @@ public class IssueUnitTest extends AbstractBusClientServerTestBase {
         assertTrue(providerResponse != null);
         assertTrue(providerResponse.getToken() != null && providerResponse.getTokenId() != null);
 
-        return providerResponse.getToken();
+        return (Element)providerResponse.getToken();
     }
             
     private TokenProviderParameters createProviderParameters(

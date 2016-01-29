@@ -18,65 +18,102 @@
  */
 package org.apache.cxf.rs.security.oidc.rp;
 
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.apache.cxf.common.util.StringUtils;
 import org.apache.cxf.jaxrs.client.WebClient;
 import org.apache.cxf.rs.security.jose.jwk.JsonWebKey;
 import org.apache.cxf.rs.security.jose.jwk.JsonWebKeys;
 import org.apache.cxf.rs.security.jose.jwk.JwkUtils;
 import org.apache.cxf.rs.security.jose.jws.JwsSignatureVerifier;
 import org.apache.cxf.rs.security.jose.jws.JwsUtils;
-import org.apache.cxf.rs.security.jose.jwt.AbstractJoseJwtConsumer;
 import org.apache.cxf.rs.security.jose.jwt.JwtClaims;
+import org.apache.cxf.rs.security.jose.jwt.JwtException;
 import org.apache.cxf.rs.security.jose.jwt.JwtToken;
 import org.apache.cxf.rs.security.jose.jwt.JwtUtils;
+import org.apache.cxf.rs.security.oauth2.provider.AbstractOAuthJoseJwtConsumer;
+import org.apache.cxf.rs.security.oauth2.provider.OAuthServiceException;
 
-public abstract class AbstractTokenValidator extends AbstractJoseJwtConsumer {
+public abstract class AbstractTokenValidator extends AbstractOAuthJoseJwtConsumer {
     private static final String SELF_ISSUED_ISSUER = "https://self-issued.me";
     private String issuerId;
-    private int issuedAtRange;
     private int clockOffset;
+    private int ttl;
     private WebClient jwkSetClient;
     private boolean supportSelfIssuedProvider;
+    private boolean strictTimeValidation;
     private ConcurrentHashMap<String, JsonWebKey> keyMap = new ConcurrentHashMap<String, JsonWebKey>(); 
-        
+
+    /**
+     * Validate core JWT claims
+     * @param claims the claims
+     * @param clientId OAuth2 client id
+     * @param validateClaimsAlways if set to true then enforce that the claims 
+     *                             to be validated must be set
+     */
     protected void validateJwtClaims(JwtClaims claims, String clientId, boolean validateClaimsAlways) {
         // validate the issuer
         String issuer = claims.getIssuer();
         if (issuer == null && validateClaimsAlways) {
-            throw new SecurityException("Invalid provider");
+            throw new OAuthServiceException("Invalid issuer");
         }
         if (supportSelfIssuedProvider && issuerId == null 
             && issuer != null && SELF_ISSUED_ISSUER.equals(issuer)) {
-            //TODO: self-issued provider token validation
+            validateSelfIssuedProvider(claims, clientId, validateClaimsAlways);
         } else {
             if (issuer != null && !issuer.equals(issuerId)) {
-                throw new SecurityException("Invalid provider");
+                throw new OAuthServiceException("Invalid issuer");
             }
             // validate subject
             if (claims.getSubject() == null) {
-                throw new SecurityException("Invalid subject");
+                throw new OAuthServiceException("Invalid subject");
             }
             // validate audience
-            String aud = claims.getAudience();
-            if (aud == null && validateClaimsAlways || aud != null && !clientId.equals(aud)) {
-                throw new SecurityException("Invalid audience");
+            List<String> audiences = claims.getAudiences();
+            if (StringUtils.isEmpty(audiences) && validateClaimsAlways 
+                || !StringUtils.isEmpty(audiences) && !audiences.contains(clientId)) {
+                throw new OAuthServiceException("Invalid audience");
             }
     
-            JwtUtils.validateJwtTimeClaims(claims, clockOffset, issuedAtRange, validateClaimsAlways);
+            // If strict time validation: if no issuedTime claim is set then an expiresAt claim must be set
+            // Otherwise: validate only if expiresAt claim is set
+            boolean expiredRequired = 
+                validateClaimsAlways || strictTimeValidation && claims.getIssuedAt() == null;
+            try {
+                JwtUtils.validateJwtExpiry(claims, clockOffset, expiredRequired);
+            } catch (JwtException ex) {
+                throw new OAuthServiceException("ID Token has expired", ex);
+            }
+            
+            // If strict time validation: If no expiresAt claim is set then an issuedAt claim must be set
+            // Otherwise: validate only if issuedAt claim is set
+            boolean issuedAtRequired = 
+                validateClaimsAlways || strictTimeValidation && claims.getExpiryTime() == null;
+            try {
+                JwtUtils.validateJwtIssuedAt(claims, ttl, clockOffset, issuedAtRequired);
+            } catch (JwtException ex) {
+                throw new OAuthServiceException("Invalid issuedAt claim", ex);
+            }
+            if (strictTimeValidation) {
+                try {
+                    JwtUtils.validateJwtNotBefore(claims, clockOffset, strictTimeValidation);
+                } catch (JwtException ex) {
+                    throw new OAuthServiceException("ID Token can not be used yet", ex);
+                }    
+            }
         }
     }
     
+    private void validateSelfIssuedProvider(JwtClaims claims, String clientId, boolean validateClaimsAlways) {
+    }
+
     public void setIssuerId(String issuerId) {
         this.issuerId = issuerId;
     }
 
     public void setJwkSetClient(WebClient jwkSetClient) {
         this.jwkSetClient = jwkSetClient;
-    }
-
-    public void setIssuedAtRange(int issuedAtRange) {
-        this.issuedAtRange = issuedAtRange;
     }
 
     @Override
@@ -95,7 +132,7 @@ public abstract class AbstractTokenValidator extends AbstractJoseJwtConsumer {
                 throw new SecurityException("Self-issued JWK key is invalid or not available");
             }
         } else {
-            String keyId = jwt.getHeaders().getKeyId();
+            String keyId = jwt.getJwsHeaders().getKeyId();
             key = keyId != null ? keyMap.get(keyId) : null;
             if (key == null && jwkSetClient != null) {
                 JsonWebKeys keys = jwkSetClient.get(JsonWebKeys.class);
@@ -104,6 +141,8 @@ public abstract class AbstractTokenValidator extends AbstractJoseJwtConsumer {
                 } else if (keys.getKeys().size() == 1) {
                     key = keys.getKeys().get(0);
                 }
+                //jwkSetClient returns the most up-to-date keys
+                keyMap.clear();
                 keyMap.putAll(keys.getKeyIdMap());
             }
         }
@@ -111,7 +150,7 @@ public abstract class AbstractTokenValidator extends AbstractJoseJwtConsumer {
         if (key != null) {
             theJwsVerifier = JwsUtils.getSignatureVerifier(key);
         } else {
-            theJwsVerifier = super.getInitializedSignatureVerifier(jwt);
+            theJwsVerifier = super.getInitializedSignatureVerifier(jwt.getJwsHeaders());
         }
         if (theJwsVerifier == null) {
             throw new SecurityException("JWS Verifier is not available");
@@ -120,13 +159,27 @@ public abstract class AbstractTokenValidator extends AbstractJoseJwtConsumer {
         return theJwsVerifier;
     }
 
-    public void setClockOffset(int clockOffset) {
-        this.clockOffset = clockOffset;
-    }
-
     public void setSupportSelfIssuedProvider(boolean supportSelfIssuedProvider) {
         this.supportSelfIssuedProvider = supportSelfIssuedProvider;
     }
 
-    
+    public int getClockOffset() {
+        return clockOffset;
+    }
+
+    public void setClockOffset(int clockOffset) {
+        this.clockOffset = clockOffset;
+    }
+
+    public void setStrictTimeValidation(boolean strictTimeValidation) {
+        this.strictTimeValidation = strictTimeValidation;
+    }
+
+    public int getTtl() {
+        return ttl;
+    }
+
+    public void setTtl(int ttl) {
+        this.ttl = ttl;
+    }
 }

@@ -27,6 +27,7 @@ public final class OAuthConstants {
     public static final String CLIENT_ID = "client_id";
     public static final String CLIENT_SECRET = "client_secret";
     public static final String CLIENT_AUDIENCE = "audience";
+    public static final String NONCE = "nonce";
     
     public static final String REDIRECT_URI = "redirect_uri";
     public static final String SCOPE = "scope";
@@ -54,12 +55,13 @@ public final class OAuthConstants {
     public static final String DIRECT_TOKEN_GRANT = "urn:ietf:params:oauth:grant-type:direct-token-grant";
     
     // Well-known token types
-    public static final String BEARER_TOKEN_TYPE = "bearer";
+    public static final String BEARER_TOKEN_TYPE = "Bearer";
     public static final String HAWK_TOKEN_TYPE = "hawk";
     
-    // http://datatracker.ietf.org/doc/draft-sakimura-oauth-tcse
+    // https://tools.ietf.org/html/rfc7636
     public static final String AUTHORIZATION_CODE_VERIFIER = "code_verifier";
     public static final String AUTHORIZATION_CODE_CHALLENGE = "code_challenge";
+    public static final String AUTHORIZATION_CODE_CHALLENGE_METHOD = "code_challenge_method";
     
     // CXF-specific
     public static final String REFRESH_TOKEN_TYPE = "refresh";
@@ -117,9 +119,9 @@ public final class OAuthConstants {
     public static final String INVALID_SCOPE = "invalid_scope";
     public static final String ACCESS_DENIED = "access_denied";
     
-    // Token Revocation
-    public static final String REVOKED_TOKEN_ID = "token";
-    public static final String REVOKED_TOKEN_TYPE_HINT = "token_type_hint";
+    // Token Revocation, Introspection
+    public static final String TOKEN_ID = "token";
+    public static final String TOKEN_TYPE_HINT = "token_type_hint";
     public static final String UNSUPPORTED_TOKEN_TYPE = "unsupported_token_type";
     
     // Authorization scheme constants, used internally by AccessTokenValidation client and service
@@ -129,7 +131,13 @@ public final class OAuthConstants {
     // Default refresh token scope value - checked by CXF utility code
     public static final String REFRESH_TOKEN_SCOPE = "refreshToken";
     
+    // Client Secret (JWS) Signature Algorithm
+    public static final String CLIENT_SECRET_SIGNATURE_ALGORITHM = "client.secret.signature.algorithm";
+    // Client Secret (JWE) Content Encryption Algorithm
+    public static final String CLIENT_SECRET_CONTENT_ENCRYPTION_ALGORITHM = 
+        "client.secret.content.encryption.algorithm";
     
+    // Client Secret Encrypting Algorithm
     private OAuthConstants() {
     }
     

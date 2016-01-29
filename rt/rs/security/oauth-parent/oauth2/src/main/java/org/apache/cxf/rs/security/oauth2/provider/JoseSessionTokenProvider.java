@@ -163,9 +163,16 @@ public class JoseSessionTokenProvider implements SessionAuthenticityTokenProvide
         if (!StringUtils.isEmpty(parts[5])) {
             state.setRedirectUri(parts[5]);
         }
+        if (!StringUtils.isEmpty(parts[6])) {
+            state.setNonce(parts[6]);
+        }
+        if (!StringUtils.isEmpty(parts[7])) {
+            state.setResponseType(parts[7]);
+        }
         return state;
     }
     protected String convertStateToString(OAuthRedirectionState secData) {
+        //TODO: make it simpler, convert it to JwtClaims -> JSON
         StringBuilder state = new StringBuilder();
         // 0: client id
         state.append(ModelEncryptionSupport.tokenizeString(secData.getClientId()));
@@ -184,6 +191,13 @@ public class JoseSessionTokenProvider implements SessionAuthenticityTokenProvide
         state.append(ModelEncryptionSupport.SEP);
         // 5: redirect uri
         state.append(ModelEncryptionSupport.tokenizeString(secData.getRedirectUri()));
+        state.append(ModelEncryptionSupport.SEP);
+        // 6: nonce
+        state.append(ModelEncryptionSupport.tokenizeString(secData.getNonce()));
+        state.append(ModelEncryptionSupport.SEP);
+        // 7: response_type
+        state.append(ModelEncryptionSupport.tokenizeString(secData.getResponseType()));
+        
         return state.toString();
     }
 

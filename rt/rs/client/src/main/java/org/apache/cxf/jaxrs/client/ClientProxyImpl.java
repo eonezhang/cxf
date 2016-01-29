@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.ResourceBundle;
 import java.util.logging.Logger;
 
+import javax.ws.rs.BeanParam;
 import javax.ws.rs.CookieParam;
 import javax.ws.rs.FormParam;
 import javax.ws.rs.HeaderParam;
@@ -204,10 +205,7 @@ public class ClientProxyImpl extends AbstractClient implements
             proxyImpl.setConfiguration(getConfiguration());
             return JAXRSClientFactory.createProxy(m.getReturnType(), proxyLoader, proxyImpl);
         } 
-        
         headers.putAll(paramHeaders);
-        setRequestHeaders(headers, ori, types.containsKey(ParameterType.FORM), 
-            bodyIndex == -1 || params[bodyIndex] == null ? null : params[bodyIndex].getClass(), m.getReturnType());
         
         getState().setTemplates(getTemplateParametersMap(ori.getURITemplate(), pathParams));
         
@@ -222,6 +220,10 @@ public class ClientProxyImpl extends AbstractClient implements
         } else if (types.containsKey(ParameterType.REQUEST_BODY))  {
             body = handleMultipart(types, ori, params);
         }
+        
+        setRequestHeaders(headers, ori, types.containsKey(ParameterType.FORM), 
+            body == null ? null : body.getClass(), m.getReturnType());
+        
         
         return doChainedInvocation(uri, headers, ori, body, bodyIndex, null, null);
         
@@ -342,10 +344,16 @@ public class ClientProxyImpl extends AbstractClient implements
             if (formParams || bodyClass != null && MultivaluedMap.class.isAssignableFrom(bodyClass)) {
                 headers.putSingle(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED);
             } else {
-                String cType = ori.getConsumeTypes().isEmpty() 
-                    || ori.getConsumeTypes().get(0).equals(MediaType.WILDCARD_TYPE) 
-                    ? MediaType.APPLICATION_XML : JAXRSUtils.mediaTypeToString(ori.getConsumeTypes().get(0));   
-                headers.putSingle(HttpHeaders.CONTENT_TYPE, cType);
+                String ctType = null;
+                List<MediaType> consumeTypes = ori.getConsumeTypes();
+                if (!consumeTypes.isEmpty() && !consumeTypes.get(0).equals(MediaType.WILDCARD_TYPE)) {
+                    ctType = JAXRSUtils.mediaTypeToString(ori.getConsumeTypes().get(0));
+                } else if (bodyClass != null) {
+                    ctType = MediaType.APPLICATION_XML;
+                }
+                if (ctType != null) {
+                    headers.putSingle(HttpHeaders.CONTENT_TYPE, ctType);
+                }
             }
         }
         
@@ -390,12 +398,32 @@ public class ClientProxyImpl extends AbstractClient implements
                                             OperationResourceInfo ori,
                                             int bodyIndex) {
         List<Object> list = new LinkedList<Object>();
+        
+        List<String> methodVars = ori.getURITemplate().getVariables();
+        List<Parameter> paramsList =  getParameters(map, ParameterType.PATH);
+        Map<String, BeanPair> beanParamValues = new HashMap<String, BeanPair>(beanParams.size());
+        for (Parameter p : beanParams) {
+            beanParamValues.putAll(getValuesFromBeanParam(params[p.getIndex()], PathParam.class));
+        }
+        if (!beanParamValues.isEmpty() && !methodVars.containsAll(beanParamValues.keySet())) {
+            List<String> classVars = ori.getClassResourceInfo().getURITemplate().getVariables();
+            for (String classVar : classVars) {
+                BeanPair pair = beanParamValues.get(classVar);
+                if (pair != null) {
+                    Object paramValue = convertParamValue(pair.getValue(), pair.getAnns());
+                    if (isRoot) {
+                        valuesMap.put(classVar, paramValue);
+                    } else {
+                        list.add(paramValue);
+                    }
+                }
+            }
+        }
         if (isRoot) {
             list.addAll(valuesMap.values());
         }
-        List<String> methodVars = ori.getURITemplate().getVariables();
         
-        List<Parameter> paramsList =  getParameters(map, ParameterType.PATH);
+        
         Map<String, Parameter> paramsMap = new LinkedHashMap<String, Parameter>();
         for (Parameter p : paramsList) {
             if (p.getName().length() == 0) {
@@ -409,10 +437,6 @@ public class ClientProxyImpl extends AbstractClient implements
             }
         }
         
-        Map<String, BeanPair> beanParamValues = new HashMap<String, BeanPair>(beanParams.size());
-        for (Parameter p : beanParams) {
-            beanParamValues.putAll(getValuesFromBeanParam(params[p.getIndex()], PathParam.class));
-        }
         Object requestBody = bodyIndex == -1 ? null : params[bodyIndex];
         for (String varName : methodVars) {
             Parameter p = paramsMap.remove(varName);
@@ -484,22 +508,33 @@ public class ClientProxyImpl extends AbstractClient implements
     
     private Map<String, BeanPair> getValuesFromBeanParam(Object bean, Class<? extends Annotation> annClass) {
         Map<String, BeanPair> values = new HashMap<String, BeanPair>();
-        
+        getValuesFromBeanParam(bean, annClass, values);
+        return values;
+    }
+    
+    private Map<String, BeanPair> getValuesFromBeanParam(Object bean, 
+                                                         Class<? extends Annotation> annClass,
+                                                         Map<String, BeanPair> values) {
         for (Method m : bean.getClass().getMethods()) {
             if (m.getName().startsWith("set")) {
                 try {
                     String propertyName = m.getName().substring(3);
                     Annotation annotation = m.getAnnotation(annClass);
-                    if (annotation != null) {
+                    boolean beanParam = m.getAnnotation(BeanParam.class) != null;
+                    if (annotation != null || beanParam) {
                         Method getter = bean.getClass().getMethod("get" + propertyName, new Class[]{});
                         Object value = getter.invoke(bean, new Object[]{});
                         if (value != null) {
-                            String annotationValue = AnnotationUtils.getAnnotationValue(annotation);
-                            values.put(annotationValue, new BeanPair(value, m.getParameterAnnotations()[0]));
+                            if (annotation != null) {
+                                String annotationValue = AnnotationUtils.getAnnotationValue(annotation);
+                                values.put(annotationValue, new BeanPair(value, m.getParameterAnnotations()[0]));
+                            } else {
+                                getValuesFromBeanParam(value, annClass, values);
+                            }
                         }
                     } else {
                         String fieldName = StringUtils.uncapitalize(propertyName);
-                        Field f = ReflectionUtil.getDeclaredField(bean.getClass(), fieldName);
+                        Field f = getDeclaredField(bean.getClass(), fieldName);
                         if (f == null) {
                             continue;
                         }
@@ -510,6 +545,11 @@ public class ClientProxyImpl extends AbstractClient implements
                                 String annotationValue = AnnotationUtils.getAnnotationValue(annotation);
                                 values.put(annotationValue, new BeanPair(value, f.getAnnotations()));
                             }    
+                        } else if (f.getAnnotation(BeanParam.class) != null) {
+                            Object value = ReflectionUtil.accessDeclaredField(f, bean, Object.class);
+                            if (value != null) {
+                                getValuesFromBeanParam(value, annClass, values);
+                            }
                         }
                     }
                 } catch (Throwable t) {
@@ -518,6 +558,17 @@ public class ClientProxyImpl extends AbstractClient implements
             }
         }
         return values;
+    }
+    
+    private static Field getDeclaredField(Class<?> cls, String fieldName) {
+        if (cls == null || cls == Object.class) {
+            return null;
+        }
+        Field f = ReflectionUtil.getDeclaredField(cls, fieldName);
+        if (f != null) {
+            return f;
+        }
+        return getDeclaredField(cls.getSuperclass(), fieldName);
     }
     
     private void handleMatrixes(Method m,
@@ -700,15 +751,10 @@ public class ClientProxyImpl extends AbstractClient implements
                 return results[0];
             }
             
-            Object response = null;
             try {
-                response = handleResponse(outMessage, ori.getClassResourceInfo().getServiceClass());
-                return response;
-            } catch (Exception ex) {
-                response = ex;
-                throw ex;
+                return handleResponse(outMessage, ori.getClassResourceInfo().getServiceClass());
             } finally {
-                completeExchange(response, outMessage.getExchange(), true);
+                completeExchange(outMessage.getExchange(), true);
             }
         } finally {
             if (origLoader != null) {
@@ -843,7 +889,7 @@ public class ClientProxyImpl extends AbstractClient implements
     private static class BeanPair {
         private Object value;
         private Annotation[] anns;
-        public BeanPair(Object value, Annotation[] anns) {
+        BeanPair(Object value, Annotation[] anns) {
             this.value = value;
             this.anns = anns;
         }

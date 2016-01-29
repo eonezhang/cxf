@@ -19,35 +19,36 @@
 package org.apache.cxf.rs.security.oidc.rp;
 
 import org.apache.cxf.rs.security.jose.jwt.JwtToken;
+import org.apache.cxf.rs.security.oauth2.client.Consumer;
 import org.apache.cxf.rs.security.oauth2.common.ClientAccessToken;
 import org.apache.cxf.rs.security.oidc.common.IdToken;
 import org.apache.cxf.rs.security.oidc.utils.OidcUtils;
 
 public class IdTokenReader extends AbstractTokenValidator {
     private boolean requireAtHash = true;
-    public IdToken getIdToken(ClientAccessToken at, String clientId) {
-        JwtToken jwt = getIdJwtToken(at, clientId);
+    public IdToken getIdToken(ClientAccessToken at, Consumer client) {
+        JwtToken jwt = getIdJwtToken(at, client);
         return getIdTokenFromJwt(jwt);
     }
-    public IdToken getIdToken(String idJwtToken, String clientId) {
-        JwtToken jwt = getIdJwtToken(idJwtToken, clientId);
+    public IdToken getIdToken(String idJwtToken, Consumer client) {
+        JwtToken jwt = getIdJwtToken(idJwtToken, client);
         return getIdTokenFromJwt(jwt);
     }
-    public JwtToken getIdJwtToken(ClientAccessToken at, String clientId) {
+    public JwtToken getIdJwtToken(ClientAccessToken at, Consumer client) {
         String idJwtToken = at.getParameters().get(OidcUtils.ID_TOKEN);
-        JwtToken jwt = getIdJwtToken(idJwtToken, clientId); 
+        JwtToken jwt = getIdJwtToken(idJwtToken, client); 
         OidcUtils.validateAccessTokenHash(at, jwt, requireAtHash);
         return jwt;
     }
-    public JwtToken getIdJwtToken(String idJwtToken, String clientId) {
-        JwtToken jwt = getJwtToken(idJwtToken);
-        validateJwtClaims(jwt.getClaims(), clientId, true);
+    public JwtToken getIdJwtToken(String idJwtToken, Consumer client) {
+        JwtToken jwt = getJwtToken(idJwtToken, client.getClientSecret());
+        validateJwtClaims(jwt.getClaims(), client.getClientId(), true);
         return jwt;
     }
     private IdToken getIdTokenFromJwt(JwtToken jwt) {
         return new IdToken(jwt.getClaims().asMap());
     }
-    public void setRequireAtHash(boolean requireAtHash) {
-        this.requireAtHash = requireAtHash;
+    public void setRequireAccessTokenHash(boolean require) {
+        this.requireAtHash = require;
     }
 }

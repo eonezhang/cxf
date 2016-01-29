@@ -18,6 +18,8 @@
  */
 package org.apache.cxf.jaxrs.provider;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -30,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import javax.ws.rs.BeanParam;
 import javax.ws.rs.Priorities;
 import javax.ws.rs.RuntimeType;
 import javax.ws.rs.container.ContainerRequestFilter;
@@ -63,6 +66,7 @@ import org.apache.cxf.jaxrs.utils.AnnotationUtils;
 import org.apache.cxf.jaxrs.utils.InjectionUtils;
 import org.apache.cxf.jaxrs.utils.JAXRSUtils;
 import org.apache.cxf.message.Message;
+import org.apache.cxf.message.MessageUtils;
 
 public final class ServerProviderFactory extends ProviderFactory {
     private static final Set<Class<?>> SERVER_FILTER_INTERCEPTOR_CLASSES = 
@@ -72,6 +76,7 @@ public final class ServerProviderFactory extends ProviderFactory {
                                                       WriterInterceptor.class));
     
     private static final String WADL_PROVIDER_NAME = "org.apache.cxf.jaxrs.model.wadl.WadlGenerator";
+    private static final String MAKE_DEFAULT_WAE_LEAST_SPECIFIC = "default.wae.mapper.least.specific";
     private List<ProviderInfo<ExceptionMapper<?>>> exceptionMappers = 
         new ArrayList<ProviderInfo<ExceptionMapper<?>>>(1);
     
@@ -112,7 +117,7 @@ public final class ServerProviderFactory extends ProviderFactory {
         }
         ServerProviderFactory factory = new ServerProviderFactory(bus);
         ProviderFactory.initFactory(factory);
-        factory.setProviders(false, new WebApplicationExceptionMapper());
+        factory.setProviders(false, false, new WebApplicationExceptionMapper());
         factory.setBusProviders();
         return factory;
     }
@@ -158,6 +163,18 @@ public final class ServerProviderFactory extends ProviderFactory {
     
     public void addBeanParamInfo(BeanParamInfo bpi) {
         beanParams.put(bpi.getResourceClass(), bpi);
+        for (Method m : bpi.getResourceClass().getMethods()) {
+            if (m.getAnnotation(BeanParam.class) != null) {
+                BeanParamInfo methodBpi = new BeanParamInfo(m.getParameterTypes()[0], getBus());
+                addBeanParamInfo(methodBpi);
+            }
+        }
+        for (Field f : bpi.getResourceClass().getDeclaredFields()) {
+            if (f.getAnnotation(BeanParam.class) != null) {
+                BeanParamInfo fieldBpi = new BeanParamInfo(f.getType(), getBus());
+                addBeanParamInfo(fieldBpi);
+            }
+        }
     }
     
     public BeanParamInfo getBeanParamInfo(Class<?> beanClass) {
@@ -176,21 +193,24 @@ public final class ServerProviderFactory extends ProviderFactory {
         if (candidates.size() == 0) {
             return null;
         }
-        Collections.sort(candidates, new ProviderInfoClassComparator(exceptionType));
+        boolean makeDefaultWaeLeastSpecific = 
+            MessageUtils.getContextualBoolean(m, MAKE_DEFAULT_WAE_LEAST_SPECIFIC, false);
+        Collections.sort(candidates, new ExceptionProviderInfoComparator(exceptionType,
+                                                                         makeDefaultWaeLeastSpecific));
         return (ExceptionMapper<T>) candidates.get(0).getProvider();
     }
     
     
     @SuppressWarnings("unchecked")
     @Override
-    protected void setProviders(boolean custom, Object... providers) {
+    protected void setProviders(boolean custom, boolean busGlobal, Object... providers) {
         List<ProviderInfo<ContainerRequestFilter>> postMatchRequestFilters = 
             new LinkedList<ProviderInfo<ContainerRequestFilter>>();
         List<ProviderInfo<ContainerResponseFilter>> postMatchResponseFilters = 
             new LinkedList<ProviderInfo<ContainerResponseFilter>>();
         
         List<ProviderInfo<? extends Object>> theProviders = 
-            prepareProviders(custom, (Object[])providers, application);
+            prepareProviders(custom, busGlobal, (Object[])providers, application);
         super.setCommonProviders(theProviders);
         for (ProviderInfo<? extends Object> provider : theProviders) {
             Class<?> providerCls = ClassHelper.getRealClass(getBus(), provider.getProvider());
@@ -347,7 +367,7 @@ public final class ServerProviderFactory extends ProviderFactory {
         private OperationResourceInfo ori;
         private String nameBinding;
         
-        public MethodFeatureContextImpl(OperationResourceInfo ori) {
+        MethodFeatureContextImpl(OperationResourceInfo ori) {
             this.ori = ori;
             configImpl = new MethodFeatureContextConfigurable(this);
             if (application != null) {
@@ -481,7 +501,7 @@ public final class ServerProviderFactory extends ProviderFactory {
     
     
     private class ServerConfigurationImpl implements Configuration {
-        public ServerConfigurationImpl() {
+        ServerConfigurationImpl() {
             
         }
         
@@ -603,6 +623,25 @@ public final class ServerProviderFactory extends ProviderFactory {
                 }
             }
             return Priorities.USER;
+        }
+    }
+    public static class ExceptionProviderInfoComparator extends ProviderInfoClassComparator {
+        private boolean makeDefaultWaeLeastSpecific;
+        public ExceptionProviderInfoComparator(Class<?> expectedCls, boolean makeDefaultWaeLeastSpecific) {
+            super(expectedCls);
+            this.makeDefaultWaeLeastSpecific = makeDefaultWaeLeastSpecific;
+        }
+        public int compare(ProviderInfo<?> p1, ProviderInfo<?> p2) {
+            if (makeDefaultWaeLeastSpecific) {
+                if (p1.getProvider() instanceof WebApplicationExceptionMapper
+                    && !p1.isCustom()) {
+                    return 1;
+                } else if (p2.getProvider() instanceof WebApplicationExceptionMapper
+                    && !p2.isCustom()) {
+                    return -1;
+                } 
+            }
+            return super.compare(p1, p2);
         }
     }
     

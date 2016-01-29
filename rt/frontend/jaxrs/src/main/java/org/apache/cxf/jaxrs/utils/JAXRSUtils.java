@@ -27,6 +27,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -102,6 +103,7 @@ import org.apache.cxf.jaxrs.impl.AsyncResponseImpl;
 import org.apache.cxf.jaxrs.impl.ContainerRequestContextImpl;
 import org.apache.cxf.jaxrs.impl.ContainerResponseContextImpl;
 import org.apache.cxf.jaxrs.impl.HttpHeadersImpl;
+import org.apache.cxf.jaxrs.impl.HttpServletRequestFilter;
 import org.apache.cxf.jaxrs.impl.HttpServletResponseFilter;
 import org.apache.cxf.jaxrs.impl.MediaTypeHeaderProvider;
 import org.apache.cxf.jaxrs.impl.MetadataMap;
@@ -258,7 +260,7 @@ public final class JAXRSUtils {
                                                      m.getParameterTypes()[0]);
             Object o;
             
-            if (p.getType() == ParameterType.BEAN && bri instanceof ClassResourceInfo) {
+            if (p.getType() == ParameterType.BEAN) {
                 o = createBeanParamValue(message, m.getParameterTypes()[0], ori);    
             } else {
                 o = createHttpParameterValue(p, 
@@ -277,7 +279,7 @@ public final class JAXRSUtils {
                                                      f.getType());
             Object o = null;
             
-            if (p.getType() == ParameterType.BEAN && bri instanceof ClassResourceInfo) {
+            if (p.getType() == ParameterType.BEAN) {
                 o = createBeanParamValue(message, f.getType(), ori);    
             } else {
                 o = createHttpParameterValue(p, 
@@ -945,7 +947,7 @@ public final class JAXRSUtils {
             m.put(FormUtils.FORM_PARAM_MAP, params);
         
             if (mt == null || mt.isCompatible(MediaType.APPLICATION_FORM_URLENCODED_TYPE)) {
-                String enc = HttpUtils.getEncoding(mt, "UTF-8");
+                String enc = HttpUtils.getEncoding(mt, StandardCharsets.UTF_8.name());
                 String body = FormUtils.readBody(m.getContent(InputStream.class), enc);
                 HttpServletRequest request = (HttpServletRequest)m.get(AbstractHTTPDestination.HTTP_REQUEST);
                 FormUtils.populateMapFromString(params, m, body, enc, decode, request);
@@ -1062,12 +1064,18 @@ public final class JAXRSUtils {
         return instance;
     }
     
-    public static <T> T createContextValue(Message m, Type genericType, Class<T> clazz) {
- 
+    public static Message getContextMessage(Message m) {
+        
         Message contextMessage = m.getExchange() != null ? m.getExchange().getInMessage() : m;
-        if (contextMessage == null && Boolean.FALSE.equals(m.get(Message.INBOUND_MESSAGE))) {
+        if (contextMessage == null && !PropertyUtils.isTrue(m.get(Message.INBOUND_MESSAGE))) {
             contextMessage = m;
         }
+        return contextMessage;
+    }
+    
+    public static <T> T createContextValue(Message m, Type genericType, Class<T> clazz) {
+ 
+        Message contextMessage = getContextMessage(m);
         Object o = null;
         if (UriInfo.class.isAssignableFrom(clazz)) {
             o = createUriInfo(contextMessage);
@@ -1148,7 +1156,8 @@ public final class JAXRSUtils {
         
         Object value = null; 
         if (clazz == HttpServletRequest.class) {
-            value = m.get(AbstractHTTPDestination.HTTP_REQUEST);
+            HttpServletRequest request = (HttpServletRequest)m.get(AbstractHTTPDestination.HTTP_REQUEST);
+            value = request != null ? new HttpServletRequestFilter(request, m) : null;
         } else if (clazz == HttpServletResponse.class) {
             HttpServletResponse response = (HttpServletResponse)m.get(AbstractHTTPDestination.HTTP_RESPONSE);
             value = response != null ? new HttpServletResponseFilter(response, m) : null;

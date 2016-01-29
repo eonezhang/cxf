@@ -38,11 +38,11 @@ import org.apache.cxf.helpers.CastUtils;
 import org.apache.cxf.jaxrs.utils.ResourceUtils;
 import org.apache.cxf.rs.security.oauth2.common.Client;
 import org.apache.cxf.rs.security.oauth2.common.ServerAccessToken;
+import org.apache.cxf.rs.security.oauth2.common.UserSubject;
 import org.apache.cxf.rs.security.oauth2.tokens.refresh.RefreshToken;
 import org.apache.cxf.rs.security.oauth2.utils.EHCacheUtil;
 
-public class DefaultEHCacheOAuthDataProvider extends AbstractOAuthDataProvider 
-    implements ClientRegistrationProvider {
+public class DefaultEHCacheOAuthDataProvider extends AbstractOAuthDataProvider {
     public static final String CLIENT_CACHE_KEY = "cxf.oauth2.client.cache";
     public static final String ACCESS_TOKEN_CACHE_KEY = "cxf.oauth2.accesstoken.cache";
     public static final String REFRESH_TOKEN_CACHE_KEY = "cxf.oauth2.refreshtoken.cache";
@@ -54,7 +54,7 @@ public class DefaultEHCacheOAuthDataProvider extends AbstractOAuthDataProvider
     private Ehcache refreshTokenCache;
     
     public DefaultEHCacheOAuthDataProvider() {
-        this(DEFAULT_CONFIG_URL, null);
+        this(DEFAULT_CONFIG_URL, BusFactory.getThreadDefaultBus(true));
     }
     
     public DefaultEHCacheOAuthDataProvider(String configFileURL, Bus bus) {
@@ -74,45 +74,100 @@ public class DefaultEHCacheOAuthDataProvider extends AbstractOAuthDataProvider
         return getCacheValue(clientCache, clientId, Client.class);
     }
     
-    @Override
     public void setClient(Client client) {
         putCacheValue(clientCache, client.getClientId(), client, 0);
-        
+    }
+    
+    public void setClients(List<Client> clients) {
+        if (clients != null) {
+            for (Client client : clients) {
+                setClient(client);
+            }
+        }
     }
 
     @Override
     public Client removeClient(String clientId) {
         Client c = getClient(clientId);
-        clientCache.remove(clientId);
+        return doRemoveClient(c);
+    }
+    
+    protected Client doRemoveClient(Client c) {
+        removeClientTokens(c);
+        clientCache.remove(c.getClientId());
         return c;
     }
 
     @Override
-    public List<Client> getClients() {
+    public List<Client> getClients(UserSubject resourceOwner) {
         List<String> keys = CastUtils.cast(clientCache.getKeys());
         List<Client> clients = new ArrayList<Client>(keys.size());
         for (String key : keys) {
-            clients.add(getClient(key));
+            Client c = getClient(key);
+            if (resourceOwner == null 
+                || c.getResourceOwnerSubject() != null 
+                   && c.getResourceOwnerSubject().getLogin().equals(resourceOwner.getLogin())) {
+                clients.add(c);
+            }
         }
         return clients;
     }
+
+    @Override
+    public List<ServerAccessToken> getAccessTokens(Client c, UserSubject sub) {
+        List<String> keys = CastUtils.cast(accessTokenCache.getKeys());
+        List<ServerAccessToken> tokens = new ArrayList<ServerAccessToken>(keys.size());
+        for (String key : keys) {
+            ServerAccessToken token = getAccessToken(key);
+            if (isTokenMatched(token, c, sub)) {
+                tokens.add(token);
+            }
+        }
+        return tokens;
+    }
+
+    @Override
+    public List<RefreshToken> getRefreshTokens(Client c, UserSubject sub) {
+        List<String> keys = CastUtils.cast(refreshTokenCache.getKeys());
+        List<RefreshToken> tokens = new ArrayList<RefreshToken>(keys.size());
+        for (String key : keys) {
+            RefreshToken token = getRefreshToken(key);
+            if (isTokenMatched(token, c, sub)) {
+                tokens.add(token);
+            }
+        }
+        return tokens;
+    }
     
+    protected static boolean isTokenMatched(ServerAccessToken token, Client c, UserSubject sub) {
+        if (c == null || token.getClient().getClientId().equals(c.getClientId())) {
+            UserSubject tokenSub = token.getSubject();
+            if (sub == null || tokenSub != null && tokenSub.getLogin().equals(sub.getLogin())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public ServerAccessToken getAccessToken(String accessToken) throws OAuthServiceException {
         return getCacheValue(accessTokenCache, accessToken, ServerAccessToken.class);
     }
-
     @Override
-    public void removeAccessToken(ServerAccessToken accessToken) throws OAuthServiceException {
-        revokeAccessToken(accessToken.getTokenKey());
+    protected ServerAccessToken revokeAccessToken(String accessTokenKey) {
+        ServerAccessToken at = getAccessToken(accessTokenKey);
+        if (at != null) {
+            accessTokenCache.remove(accessTokenKey);
+        }
+        return at;
     }
-
-    protected boolean revokeAccessToken(String accessTokenKey) {
-        return accessTokenCache.remove(accessTokenKey);
+    @Override
+    protected RefreshToken getRefreshToken(String refreshTokenKey) { 
+        return getCacheValue(refreshTokenCache, refreshTokenKey, RefreshToken.class);
     }
-    
-    protected RefreshToken revokeRefreshToken(Client client, String refreshTokenKey) { 
-        RefreshToken refreshToken = getCacheValue(refreshTokenCache, refreshTokenKey, RefreshToken.class);
+    @Override
+    protected RefreshToken revokeRefreshToken(String refreshTokenKey) { 
+        RefreshToken refreshToken = getRefreshToken(refreshTokenKey);
         if (refreshToken != null) {
             refreshTokenCache.remove(refreshTokenKey);
         }
@@ -193,5 +248,9 @@ public class DefaultEHCacheOAuthDataProvider extends AbstractOAuthDataProvider
         refreshTokenCache = createCache(cacheManager, refreshTokenKey);
     }
 
-    
+    @Override
+    public void close() {
+        cacheManager.shutdown();
+    }
+
 }

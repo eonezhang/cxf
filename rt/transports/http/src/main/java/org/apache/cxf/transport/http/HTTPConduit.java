@@ -175,7 +175,7 @@ public abstract class HTTPConduit
     private static final String AUTO_REDIRECT_MAX_SAME_URI_COUNT = "http.redirect.max.same.uri.count";
     
     private static final String HTTP_POST_METHOD = "POST";
-    private static final String HTTP_PUT_METHOD = "PUT";
+    private static final String HTTP_GET_METHOD = "GET";
     private static final Set<String> KNOWN_HTTP_VERBS_WITH_NO_CONTENT = 
         new HashSet<String>(Arrays.asList(new String[]{"GET", "HEAD", "OPTIONS", "TRACE"}));
     /**
@@ -252,13 +252,13 @@ public abstract class HTTPConduit
      * Implements the authentication handling when talking to a server. If it is not set
      * it will be created from the authorizationPolicy.authType
      */
-    protected HttpAuthSupplier authSupplier;
+    protected volatile HttpAuthSupplier authSupplier;
     
     /**
      * Implements the proxy authentication handling. If it is not set
      * it will be created from the proxyAuthorizationPolicy.authType
      */
-    protected HttpAuthSupplier proxyAuthSupplier;
+    protected volatile HttpAuthSupplier proxyAuthSupplier;
 
     protected Cookies cookies;
     
@@ -566,8 +566,7 @@ public abstract class HTTPConduit
     protected boolean isChunkingSupported(Message message, String httpMethod) {
         if (HTTP_POST_METHOD.equals(httpMethod)) { 
             return true;
-        }
-        if (HTTP_PUT_METHOD.equals(httpMethod)) {
+        } else if (!HTTP_GET_METHOD.equals(httpMethod)) {
             MessageContentsList objs = MessageContentsList.getContentsList(message);
             if (objs != null && objs.size() > 0) {
                 Object obj = objs.get(0);
@@ -677,10 +676,15 @@ public abstract class HTTPConduit
         setAndGetDefaultAddress();
         if (result == null) {
             if (pathInfo == null && queryString == null) {
-                message.put(Message.ENDPOINT_ADDRESS, defaultAddress.getString());
+                if (defaultAddress != null) {
+                    message.put(Message.ENDPOINT_ADDRESS, defaultAddress.getString());
+                }
                 return defaultAddress;
             }
-            message.put(Message.ENDPOINT_ADDRESS, defaultAddress.getString());
+            if (defaultAddress != null) {
+                result = defaultAddress.getString();
+                message.put(Message.ENDPOINT_ADDRESS, result);
+            }
         }
         
         // REVISIT: is this really correct?
@@ -689,8 +693,12 @@ public abstract class HTTPConduit
         }
         if (queryString != null) {
             result = result + "?" + queryString;
-        }        
-        return result.equals(defaultAddress.getString()) ? defaultAddress : new Address(result);
+        }
+        if (defaultAddress == null) {
+            return setAndGetDefaultAddress(result);
+        } else {
+            return result.equals(defaultAddress.getString()) ? defaultAddress : new Address(result);
+        }
     }
 
     /**
@@ -727,12 +735,7 @@ public abstract class HTTPConduit
                 if (defaultAddress == null) {
                     if (fromEndpointReferenceType && getTarget().getAddress().getValue() != null) {
                         defaultAddress = new Address(this.getTarget().getAddress().getValue());
-                    } else {
-                        if (endpointInfo.getAddress() == null) {
-                            throw new URISyntaxException("<null>", 
-                                                         "Invalid address. Endpoint address cannot be null.",
-                                                         0);
-                        }
+                    } else if (endpointInfo.getAddress() != null) {
                         defaultAddress = new Address(endpointInfo.getAddress());
                     }
                 }
@@ -741,6 +744,21 @@ public abstract class HTTPConduit
         return defaultAddress;
     }
 
+    private Address setAndGetDefaultAddress(String curAddr) throws URISyntaxException {
+        if (defaultAddress == null) {
+            synchronized (this) {
+                if (defaultAddress == null) {
+                    if (curAddr != null) {
+                        defaultAddress = new Address(curAddr);
+                    } else {
+                        throw new URISyntaxException("<null>",
+                                                     "Invalid address. Endpoint address cannot be null.", 0);
+                    }
+                }
+            }
+        }
+        return defaultAddress;
+    }
     /**
      * This call places HTTP Header strings into the headers that are relevant
      * to the Authorization policies that are set on this conduit by
@@ -1416,6 +1434,7 @@ public abstract class HTTPConduit
             case 307:
                 return redirectRetransmit();
             case HttpURLConnection.HTTP_UNAUTHORIZED:
+            case HttpURLConnection.HTTP_PROXY_AUTH:
                 return authorizationRetransmit();
             default:
                 break;
@@ -1554,28 +1573,38 @@ public abstract class HTTPConduit
             return responseCode == 500 && MessageUtils.getContextualBoolean(message, Message.ROBUST_ONEWAY, false);
         }
 
-        protected void handleResponseInternal() throws IOException {
+        protected int doProcessResponseCode() throws IOException {
             Exchange exchange = outMessage.getExchange();
-            int responseCode = getResponseCode();
-            if (responseCode == -1) {
+            int rc = getResponseCode();
+            if (rc == -1) {
                 LOG.warning("HTTP Response code appears to be corrupted");
             }
             if (exchange != null) {
-                exchange.put(Message.RESPONSE_CODE, responseCode);
+                exchange.put(Message.RESPONSE_CODE, rc);
+                if (rc == 404 || rc == 503) {
+                    exchange.put("org.apache.cxf.transport.service_not_available", true);
+                } 
             }
                        
-            // This property should be set in case the exceptions should not be handled here
-            // For example jax rs uses this
-            boolean noExceptions = MessageUtils.isTrue(outMessage.getContextualProperty(
-                "org.apache.cxf.transport.no_io_exceptions"));
+            // "org.apache.cxf.transport.no_io_exceptions" property should be set in case the exceptions
+            // should not be handled here; for example jax rs uses this
             
-            if (responseCode >= 400 && responseCode != 500 && !noExceptions) {
-                
-                if (responseCode == 404 || responseCode == 503) {
-                    exchange.put("org.apache.cxf.transport.service_not_available", true);
-                }
-                throw new HTTPException(responseCode, getResponseMessage(), url.toURL());
+            // "org.apache.cxf.transport.process_fault_on_http_400" property should be set in case a
+            // soap fault because of a HTTP 400 should be returned back to the client (SOAP 1.2 spec)
+
+            if (rc >= 400 && rc != 500
+                && !MessageUtils.isTrue(outMessage.getContextualProperty("org.apache.cxf.transport.no_io_exceptions"))
+                && (rc > 400 || !MessageUtils.isTrue(outMessage
+                    .getContextualProperty("org.apache.cxf.transport.process_fault_on_http_400")))) {
+
+                throw new HTTPException(rc, getResponseMessage(), url.toURL());
             }
+            return rc;
+        }
+        
+        protected void handleResponseInternal() throws IOException {
+            Exchange exchange = outMessage.getExchange();
+            int responseCode = doProcessResponseCode();
 
             InputStream in = null;
             // oneway or decoupled twoway calls may expect HTTP 202 with no content

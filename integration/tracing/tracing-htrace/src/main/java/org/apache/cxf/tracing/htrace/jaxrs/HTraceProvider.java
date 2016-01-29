@@ -19,44 +19,60 @@
 package org.apache.cxf.tracing.htrace.jaxrs;
 
 import java.io.IOException;
+import java.lang.annotation.Annotation;
 
 import javax.ws.rs.container.ContainerRequestContext;
 import javax.ws.rs.container.ContainerRequestFilter;
 import javax.ws.rs.container.ContainerResponseContext;
 import javax.ws.rs.container.ContainerResponseFilter;
+import javax.ws.rs.container.ResourceInfo;
+import javax.ws.rs.container.Suspended;
+import javax.ws.rs.core.Context;
 import javax.ws.rs.ext.Provider;
 
 import org.apache.cxf.tracing.htrace.AbstractHTraceProvider;
-import org.apache.htrace.Sampler;
-import org.apache.htrace.TraceScope;
-import org.apache.htrace.impl.NeverSampler;
+import org.apache.htrace.core.TraceScope;
+import org.apache.htrace.core.Tracer;
 
 @Provider
 public class HTraceProvider extends AbstractHTraceProvider 
-    implements ContainerRequestFilter, ContainerResponseFilter { 
-    public HTraceProvider() {
-        this(NeverSampler.INSTANCE);
-    }
-
-    public HTraceProvider(final Sampler< ? > sampler) {
-        super(sampler);
+    implements ContainerRequestFilter, ContainerResponseFilter {
+    @Context 
+    private ResourceInfo resourceInfo;
+    
+    public HTraceProvider(final Tracer tracer) {
+        super(tracer);
     }
 
     @Override
     public void filter(final ContainerRequestContext requestContext) throws IOException {
-        TraceScope scope = super.startTraceSpan(requestContext.getHeaders(), 
-                                                requestContext.getUriInfo().getPath());
+        final TraceScopeHolder<TraceScope> holder = super.startTraceSpan(requestContext.getHeaders(), 
+                                                requestContext.getUriInfo().getPath(),
+                                                requestContext.getMethod());
         
-        if (scope != null) {
-            requestContext.setProperty(TRACE_SPAN, scope);
+        if (holder != null) {
+            requestContext.setProperty(TRACE_SPAN, holder);
         }
     }
     
+    @SuppressWarnings("unchecked")
     @Override
     public void filter(final ContainerRequestContext requestContext,
             final ContainerResponseContext responseContext) throws IOException {
         super.stopTraceSpan(requestContext.getHeaders(), 
                             responseContext.getHeaders(), 
-                            (TraceScope)requestContext.getProperty(TRACE_SPAN));
+                            (TraceScopeHolder<TraceScope>)requestContext.getProperty(TRACE_SPAN));
+    }
+    
+    @Override
+    protected boolean isAsyncResponse() {
+        for (final Annotation[] annotations: resourceInfo.getResourceMethod().getParameterAnnotations()) {
+            for (final Annotation annotation: annotations) {
+                if (annotation.annotationType().equals(Suspended.class)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

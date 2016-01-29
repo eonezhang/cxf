@@ -30,7 +30,9 @@ public class AccessTokenRegistration {
     private List<String> approvedScope = new LinkedList<String>();
     private String grantType;
     private UserSubject subject;
-    private String audience;
+    private List<String> audiences = new LinkedList<String>();
+    private String nonce;
+    private String clientCodeVerifier;
     
     /**
      * Sets the {@link Client} instance
@@ -113,12 +115,27 @@ public class AccessTokenRegistration {
         return grantType;
     }
 
-    public String getAudience() {
-        return audience;
+    public List<String> getAudiences() {
+        return audiences;
     }
 
-    public void setAudience(String audience) {
-        this.audience = audience;
+    public void setAudiences(List<String> audiences) {
+        this.audiences = audiences;
     }
     
+    public String getClientCodeVerifier() {
+        return clientCodeVerifier;
+    }
+
+    public void setClientCodeVerifier(String clientCodeVerifier) {
+        this.clientCodeVerifier = clientCodeVerifier;
+    }
+
+    public String getNonce() {
+        return nonce;
+    }
+
+    public void setNonce(String nonce) {
+        this.nonce = nonce;
+    }
 }

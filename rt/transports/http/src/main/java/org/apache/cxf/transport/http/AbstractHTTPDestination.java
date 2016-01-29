@@ -44,6 +44,7 @@ import org.apache.cxf.attachment.AttachmentDataSource;
 import org.apache.cxf.common.logging.LogUtils;
 import org.apache.cxf.common.util.Base64Exception;
 import org.apache.cxf.common.util.Base64Utility;
+import org.apache.cxf.common.util.PropertyUtils;
 import org.apache.cxf.common.util.StringUtils;
 import org.apache.cxf.configuration.Configurable;
 import org.apache.cxf.configuration.security.AuthorizationPolicy;
@@ -105,6 +106,7 @@ public abstract class AbstractHTTPDestination
     private static final String SSL_PEER_CERT_CHAIN_ATTRIBUTE = "javax.servlet.request.X509Certificate";
 
     private static final Logger LOG = LogUtils.getL7dLogger(AbstractHTTPDestination.class);
+    private static final String CACHE_HTTP_REQUEST_PARAMETERS = "cache.http.request.parameters"; 
     
     protected final Bus bus;
     protected DestinationRegistry registry;
@@ -295,6 +297,10 @@ public abstract class AbstractHTTPDestination
                           resp);
         
         final Exchange exchange = inMessage.getExchange();
+        if (bus != null && PropertyUtils.isTrue(
+            bus.getProperty(CACHE_HTTP_REQUEST_PARAMETERS))) {
+            req.getParameterNames();
+        }
         DelegatingInputStream in = new DelegatingInputStream(req.getInputStream()) {
             public void cacheInput() {
                 if (!cached && (exchange.isOneWay() || isWSAddressingReplyToSpecified(exchange))) {
@@ -720,7 +726,7 @@ public abstract class AbstractHTTPDestination
             OutputStream os = message.getContent(OutputStream.class);
             if (os == null) {
                 message.setContent(OutputStream.class, 
-                               new WrappedOutputStream(message, response));
+                               new WrappedOutputStream(message));
             }
         }
         
@@ -752,13 +758,11 @@ public abstract class AbstractHTTPDestination
      */
     private class WrappedOutputStream extends AbstractWrappedOutputStream implements CopyingOutputStream {
 
-        protected HttpServletResponse response;
         private Message outMessage;
         
-        WrappedOutputStream(Message m, HttpServletResponse resp) {
+        WrappedOutputStream(Message m) {
             super();
             this.outMessage = m;
-            response = resp;
         }
 
         
@@ -796,8 +800,8 @@ public abstract class AbstractHTTPDestination
                 }
             }
             if (wrappedStream != null) {
+                // closing the stream should indirectly call the servlet response's flushBuffer
                 wrappedStream.close();
-                response.flushBuffer();
             }
             /*
             try {

@@ -62,7 +62,7 @@ import org.apache.neethi.All;
 import org.apache.neethi.Assertion;
 import org.apache.neethi.ExactlyOne;
 import org.apache.neethi.Policy;
-import org.apache.wss4j.dom.WSSConfig;
+import org.apache.wss4j.dom.engine.WSSConfig;
 import org.apache.wss4j.dom.message.token.SecurityContextToken;
 import org.apache.wss4j.policy.SP12Constants;
 import org.apache.wss4j.policy.SPConstants;
@@ -79,7 +79,7 @@ import org.apache.xml.security.utils.Base64;
 
 class SecureConversationInInterceptor extends AbstractPhaseInterceptor<SoapMessage> {
     
-    public SecureConversationInInterceptor() {
+    SecureConversationInInterceptor() {
         super(Phase.PRE_STREAM);
         addBefore(WSS4JStaxInInterceptor.class.getName());
         addBefore(HttpsTokenInInterceptor.class.getName());
@@ -481,7 +481,7 @@ class SecureConversationInInterceptor extends AbstractPhaseInterceptor<SoapMessa
     static class SecureConversationCancelInterceptor extends AbstractPhaseInterceptor<SoapMessage> {
         static final SecureConversationCancelInterceptor INSTANCE = new SecureConversationCancelInterceptor();
         
-        public SecureConversationCancelInterceptor() {
+        SecureConversationCancelInterceptor() {
             super(Phase.POST_LOGICAL);
         }
         

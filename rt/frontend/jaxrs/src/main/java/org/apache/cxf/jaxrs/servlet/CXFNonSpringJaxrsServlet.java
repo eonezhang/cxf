@@ -510,7 +510,7 @@ public class CXFNonSpringJaxrsServlet extends CXFNonSpringServlet {
             setDocLocation(bean, servletConfig);
             setSchemasLocations(bean, servletConfig);
             bean.setBus(getBus());
-            bean.setApplication(providerApp);
+            bean.setApplicationInfo(providerApp);
             bean.create();
         }
     }
@@ -593,7 +593,7 @@ public class CXFNonSpringJaxrsServlet extends CXFNonSpringServlet {
 
     private static class ApplicationImpl extends Application {
         private Set<Object> applicationSingletons;
-        public ApplicationImpl(Set<Object> applicationSingletons) {
+        ApplicationImpl(Set<Object> applicationSingletons) {
             this.applicationSingletons = applicationSingletons;
         }
         public Set<Object> getSingletons() {

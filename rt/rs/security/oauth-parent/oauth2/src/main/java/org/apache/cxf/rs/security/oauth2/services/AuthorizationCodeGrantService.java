@@ -53,7 +53,7 @@ import org.apache.cxf.rs.security.oauth2.utils.OAuthConstants;
  */
 @Path("/authorize")
 public class AuthorizationCodeGrantService extends RedirectionBasedGrantService {
-    private static final Integer RECOMMENDED_CODE_EXPIRY_TIME_MINS = 10;
+    private static final long RECOMMENDED_CODE_EXPIRY_TIME_SECS = 10L * 60L;
     private boolean canSupportPublicClients;
     private boolean canSupportEmptyRedirectForPrivateClients;
     private OOBResponseDeliverer oobDeliverer;
@@ -68,10 +68,12 @@ public class AuthorizationCodeGrantService extends RedirectionBasedGrantService 
                                                              MultivaluedMap<String, String> params,
                                                              String redirectUri,
                                                              UserSubject subject,
-                                                             List<OAuthPermission> perms,
-                                                             boolean preAuthorizedTokenAvailable) {
+                                                             List<OAuthPermission> requestedPerms,
+                                                             List<OAuthPermission> alreadyAuthorizedPerms,
+                                                             boolean authorizationCanBeSkipped) {
         OAuthAuthorizationData data = 
-            super.createAuthorizationData(client, params, redirectUri, subject, perms, preAuthorizedTokenAvailable);
+            super.createAuthorizationData(client, params, redirectUri, subject, 
+                                          requestedPerms, alreadyAuthorizedPerms, authorizationCanBeSkipped);
         setCodeQualifier(data, params);
         return data;
     }
@@ -101,11 +103,11 @@ public class AuthorizationCodeGrantService extends RedirectionBasedGrantService 
         // in this flow the code is still created, the preauthorized token
         // will be retrieved by the authorization code grant handler
         AuthorizationCodeRegistration codeReg = new AuthorizationCodeRegistration(); 
-        
+        codeReg.setPreauthorizedTokenAvailable(preauthorizedToken != null);
         codeReg.setClient(client);
         codeReg.setRedirectUri(state.getRedirectUri());
         codeReg.setRequestedScope(requestedScope);
-        if (approvedScope != null && approvedScope.isEmpty()) {
+        if (approvedScope == null || approvedScope.isEmpty()) {
             // no down-scoping done by a user, all of the requested scopes have been authorized
             codeReg.setApprovedScope(requestedScope);
         } else {
@@ -113,6 +115,7 @@ public class AuthorizationCodeGrantService extends RedirectionBasedGrantService 
         }
         codeReg.setSubject(userSubject);
         codeReg.setAudience(state.getAudience());
+        codeReg.setNonce(state.getNonce());
         codeReg.setClientCodeChallenge(state.getClientCodeChallenge());
         
         ServerAuthorizationCodeGrant grant = null;
@@ -121,13 +124,14 @@ public class AuthorizationCodeGrantService extends RedirectionBasedGrantService 
         } catch (OAuthServiceException ex) {
             return createErrorResponse(state.getState(), state.getRedirectUri(), OAuthConstants.ACCESS_DENIED);
         }
-        if (grant.getExpiresIn() / 60 > RECOMMENDED_CODE_EXPIRY_TIME_MINS) {
+        if (grant.getExpiresIn() > RECOMMENDED_CODE_EXPIRY_TIME_SECS) {
             LOG.warning("Code expiry time exceeds 10 minutes");
         }
         String grantCode = processCodeGrant(client, grant.getCode(), grant.getSubject());
         if (state.getRedirectUri() == null) {
             OOBAuthorizationResponse oobResponse = new OOBAuthorizationResponse();
             oobResponse.setClientId(client.getClientId());
+            oobResponse.setClientDescription(client.getApplicationDescription());
             oobResponse.setAuthorizationCode(grant.getCode());
             oobResponse.setUserId(userSubject.getLogin());
             oobResponse.setExpiresIn(grant.getExpiresIn());

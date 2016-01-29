@@ -1,8 +1,8 @@
-Apache CXF 3.1.2 Release Notes
+Apache CXF 3.1.4 Release Notes
 
 1. Overview
 
-The 3.1.2 version of Apache CXF is a significant new version of CXF 
+The 3.1.4 version of Apache CXF is a significant new version of CXF 
 that provides several new features and enhancements.  
 
 New features include: 
@@ -25,7 +25,7 @@ http://cxf.apache.org/docs/31-migration-guide.html
 for further information and requirements for upgrading from earlier
 versions of CXF.
 
-3.1.2 fixes over 40 JIRA issues reported by users and the community.
+3.1.4 fixes over 35 JIRA issues reported by users and the community.
 
 
 
@@ -72,51 +72,46 @@ to 3.1.
 7. Specific issues, features, and improvements fixed in this version
 
 ** Bug
-    * [CXF-6307] - Wrong select the message body reader
-    * [CXF-6429] - Provider matching when nested generic type
-    * [CXF-6444] - CrossOriginResourceSharingFilter.java should not set Origin=* when Credentials=true
-    * [CXF-6446] - WADL JavaDocProvider misses operation markers for the docs built with Java 8
-    * [CXF-6448] - CXF 3.1.1's feature cxf-transports-websocket-server may not install
-    * [CXF-6450] - Bad handling of JAX-RS generic interfaces
-    * [CXF-6451] - Set-Cookie Header incorrectly parsed
-    * [CXF-6464] - The derived key versions of sign/encrypt in SymmetricBindingHandler don't support attachments
-    * [CXF-6466] - Closing JAX-RS clients from finalize affects clients sharing the same conduit
-    * [CXF-6467] - Jaxrs client handles array type property in a form object as a single element
-    * [CXF-6468] - Secure Conversation Renew is missing Instance creation
-    * [CXF-6469] - schemaLocation in xsd import is not rewritten correctly in Java 8
-    * [CXF-6472] - Cannot create ContextResolver for class extending HttpServletRequest, HttpServletResponse, etc.
-    * [CXF-6473] - Double signatures while using AsymmetricBindingHandler
-    * [CXF-6474] - UriTemplate should not always ignore an empty/null group value
-    * [CXF-6479] - Denial of Service: Regular Expression in StringUtils
-    * [CXF-6480] - InjectionUtils createThreadLocalServletApiContext better error message for invalid @Context classes
-    * [CXF-6481] - Jetty HTTPJ session manager Blueprint configuration is not effective
-    * [CXF-6484] - Regression in Content-id format
-    * [CXF-6489] - Cannot set ClientSecretVerifier in AbstractTokenService
-    * [CXF-6491] - wadl2java produces incorrect Consumes annotation for multiple representations on POST methods
-    * [CXF-6495] - Inconsistent RMAsserion may be built for 3.0.x
-    * [CXF-6496] - NPE in SamlAssertionWrapper.assertionToString()
-    * [CXF-6502] - JAXRSInInterceptor throw java.lang.IndexOutOfBoundsException if content-type header is empty
-    * [CXF-6506] - Client-side message context value HTTP_REQUEST_HEADERS is not shared between SOAP handlers
-    * [CXF-6507] - WSRM 3.0 may store corrupted message
+    * [CXF-6347] - CXF bundle activators not called in Eclipse/Equinox
+    * [CXF-6493] - cxf-rt-transports-http-3.1.1.jar contains OSGi interface classes
+    * [CXF-6595] - CXF Karaf feature file: set dependency = true in the jta bundle for CXF
+    * [CXF-6599] - CXF ProxyHelper might cause OOM like conditions
+    * [CXF-6600] - Sudden repeating NPE on token request by STSClient
+    * [CXF-6601] - Swagger2Feature can hit a NPE when running in localtransport
+    * [CXF-6602] - Digest algorithms are not set properly when derived keys are used
+    * [CXF-6607] - Cached STS-issued tokens are not renewed on expiry in delegation scenario
+    * [CXF-6613] - java.lang.NoSuchFieldError: REFLECTION in CFX 3.1.4-SNAPSHOT
+    * [CXF-6614] - "Comparison method violates its general contract" in DestinationRegistryImpl.getSortedDestinations
+    * [CXF-6615] - the order of attributes in SubjectDN of certificate shouldn't be significant
+    * [CXF-6616] - need always close the CipherOutputStream when the encryption is done to get the complete content 
+    * [CXF-6620] - Fix DefaultSubjectProvider to support NameID formats other than “unspecified”
+    * [CXF-6621] - Schema imports are not handled correctly in generated WSDL and XSD files when using catalog rewrites
+    * [CXF-6629] - ConcurrentModificationException at AbstractResourceInfo.clearProxies()
+    * [CXF-6630] - Cannot call setAttribute with a null name
+    * [CXF-6632] - Memory leak due to literal keys in WSDLDefinition map
+    * [CXF-6637] - @GZIP and similar CXF annotations are not recognized if set on super classes
+    * [CXF-6638] - AsyncHTTPConduit does not allow body payloads with "PATCH" method
+    * [CXF-6642] - Memory Leak in ResponseImpl.readEntity()
+    * [CXF-6648] - Wildcard Content-Type is set for GET
+    * [CXF-6653] - NPE may result while generating a SequenceFault in WS-RM 1.1
+    * [CXF-6655] - Error Invalid address. Endpoint address cannot be null
+    * [CXF-6657] - CXF Failover using JAXRS prevents header retrieval from ResponseExceptionMappers
 
 ** Improvement
-    * [CXF-5926] - Extend SSL KeyManagers with password callback handler 
-    * [CXF-6411] - Improve NoOsgi Blueprint Integration
-    * [CXF-6447] - JAXRS proxies should be able to resolve path parameters from the request body bean
-    * [CXF-6470] - Make SimplePrinciple Serializable
-    * [CXF-6476] - Introduce Swagger v1.5 feature (v2.0 specification)
-    * [CXF-6478] - Introduce the option to disable using query parameters to populate the form maps
-    * [CXF-6482] - Old javax.servlet.http version in oauth2 bundle
-    * [CXF-6483] - Sort ConfigurerImpl Matchers by a number of literal characters
-    * [CXF-6498] - Update JAX-RS 2.0 ClientImpl to support CXF features
-    * [CXF-6499] - WADL Generator should optionally ignore path params for the same path method evaluation
-    * [CXF-6508] - JAASLoginInterceptor should allow named Principals
+    * [CXF-5606] - WADL to Java code generator should translate wadl:doc into Java documentation
+    * [CXF-6623] - Add support for nested @BeanParam's
+    * [CXF-6625] - Wadl-to-Java should be able to generate custom method annotation classes
+    * [CXF-6633] - Enhance Swagger feature with optional dynamic basePath, tags and Javadocs handling
+    * [CXF-6634] - Move DocumentationProvider interface out of .model.wadl. package
+    * [CXF-6643] - Upgrade Apache HTrace to 4.0 
+    * [CXF-6644] - Move Basic JSON parser code into a dedicated module
+    * [CXF-6645] - Introduce a 'jose.debug' property
+    * [CXF-6649] - Add Karaf feature cxf-rs-description-swagger2
+    * [CXF-6658] - Make ServletContextResourceResolver optionally ignored 
 
-** New Feature
-    * [CXF-5607] - Support for CXF OAuth2 endpoints participating in OpenId-Connect flows
-    * [CXF-6477] - Add "publish" attribute to jaxrs blueprint bean
 
 ** Task
-    * [CXF-6165] - Create OIDC OAuth2 demo
-    * [CXF-6449] - Upgrade Atmosphere to 2.3.2
-    * [CXF-6490] - Create OIDC Authentication Only demo
+    * [CXF-6503] - Investigate if WADL JavaDocProvider can report JavaDocs of inherited methods
+
+
+

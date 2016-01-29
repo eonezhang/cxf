@@ -31,9 +31,12 @@ import javax.xml.bind.JAXBElement;
 import javax.xml.ws.WebServiceContext;
 import javax.xml.ws.handler.MessageContext;
 
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+
 import org.apache.cxf.common.logging.LogUtils;
 import org.apache.cxf.helpers.CastUtils;
-import org.apache.cxf.rt.security.claims.ClaimCollection;
+import org.apache.cxf.helpers.DOMUtils;
 import org.apache.cxf.sts.QNameConstants;
 import org.apache.cxf.sts.event.STSIssueFailureEvent;
 import org.apache.cxf.sts.event.STSIssueSuccessEvent;
@@ -65,7 +68,7 @@ import org.apache.wss4j.common.ext.WSSecurityException;
 import org.apache.wss4j.common.principal.SAMLTokenPrincipal;
 import org.apache.wss4j.common.principal.SAMLTokenPrincipalImpl;
 import org.apache.wss4j.common.saml.SamlAssertionWrapper;
-import org.apache.wss4j.dom.WSSecurityEngineResult;
+import org.apache.wss4j.dom.engine.WSSecurityEngineResult;
 import org.apache.wss4j.dom.handler.WSHandlerConstants;
 import org.apache.wss4j.dom.handler.WSHandlerResult;
 import org.apache.wss4j.stax.securityEvent.WSSecurityEventConstants;
@@ -114,12 +117,6 @@ public class TokenIssueOperation extends AbstractOperation implements IssueOpera
             RequestRequirements requestRequirements = parseRequest(request, context);
     
             providerParameters = createTokenProviderParameters(requestRequirements, context);
-    
-            // Check if the requested claims can be handled by the configured claim handlers
-            ClaimCollection requestedClaims = providerParameters.getRequestedPrimaryClaims();
-            checkClaimsSupport(requestedClaims);
-            requestedClaims = providerParameters.getRequestedSecondaryClaims();
-            checkClaimsSupport(requestedClaims);
             providerParameters.setClaimsManager(claimsManager);
             
             String realm = providerParameters.getRealm();
@@ -283,17 +280,20 @@ public class TokenIssueOperation extends AbstractOperation implements IssueOpera
         JAXBElement<RequestedSecurityTokenType> requestedToken = 
             QNameConstants.WS_TRUST_FACTORY.createRequestedSecurityToken(requestedTokenType);
         LOG.fine("Encrypting Issued Token: " + encryptIssuedToken);
-        if (!encryptIssuedToken) {
+        if (encryptIssuedToken) {
             requestedTokenType.setAny(tokenResponse.getToken());
+            response.getAny().add(requestedToken);
         } else {
-            requestedTokenType.setAny(
-                encryptToken(
-                    tokenResponse.getToken(), tokenResponse.getTokenId(), 
-                    encryptionProperties, keyRequirements, webServiceContext
-                )
-            );
+            if (tokenResponse.getToken() instanceof String) {
+                Document doc = DOMUtils.newDocument();
+                Element tokenWrapper = doc.createElementNS(null, "TokenWrapper");
+                tokenWrapper.setTextContent((String)tokenResponse.getToken());
+                requestedTokenType.setAny(tokenWrapper);
+            } else {
+                requestedTokenType.setAny(tokenResponse.getToken());
+            }
+            response.getAny().add(requestedToken);
         }
-        response.getAny().add(requestedToken);
 
         if (returnReferences) {
             // RequestedAttachedReference
@@ -414,7 +414,7 @@ public class TokenIssueOperation extends AbstractOperation implements IssueOpera
         // Now try steaming results
         try {
             org.apache.xml.security.stax.securityToken.SecurityToken securityToken = 
-                findInboundSecurityToken(WSSecurityEventConstants.SamlToken, messageContext);
+                findInboundSecurityToken(WSSecurityEventConstants.SAML_TOKEN, messageContext);
             if (securityToken instanceof SamlSecurityToken
                 && ((SamlSecurityToken)securityToken).getSamlAssertionWrapper() != null) {
                 return ((SamlSecurityToken)securityToken).getSamlAssertionWrapper();

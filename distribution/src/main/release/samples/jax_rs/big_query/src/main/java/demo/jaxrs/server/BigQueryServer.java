@@ -28,9 +28,10 @@ import java.util.List;
 
 import javax.ws.rs.core.MediaType;
 
+import org.apache.cxf.interceptor.LoggingInInterceptor;
 import org.apache.cxf.jaxrs.client.WebClient;
 import org.apache.cxf.jaxrs.provider.json.JsonMapObjectProvider;
-import org.apache.cxf.rs.security.jose.JoseType;
+import org.apache.cxf.rs.security.jose.common.JoseType;
 import org.apache.cxf.rs.security.jose.jwa.SignatureAlgorithm;
 import org.apache.cxf.rs.security.jose.jws.JwsHeaders;
 import org.apache.cxf.rs.security.jose.jws.JwsJwtCompactProducer;
@@ -91,6 +92,8 @@ public final class BigQueryServer {
         WebClient accessTokenService = WebClient.create("https://www.googleapis.com/oauth2/v3/token",
                                                         Arrays.asList(new OAuthJSONProvider(),
                                                                       new AccessTokenGrantWriter()));
+        WebClient.getConfig(accessTokenService).getInInterceptors().add(new LoggingInInterceptor());
+        
         accessTokenService.type(MediaType.APPLICATION_FORM_URLENCODED).accept(MediaType.APPLICATION_JSON);
         
         return accessTokenService.post(grant, ClientAccessToken.class);

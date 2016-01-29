@@ -295,6 +295,11 @@ public class TransportBindingTest extends AbstractBusClientServerTestBase {
     
     @org.junit.Test
     public void testSAML2Dispatch() throws Exception {
+        
+        // Needed to prevent test failure using IBM JDK 
+        if ("IBM Corporation".equals(System.getProperty("java.vendor"))) {
+            System.setProperty("https.protocols", "TLSv1");
+        }
 
         SpringBusFactory bf = new SpringBusFactory();
         URL busFile = TransportBindingTest.class.getResource("cxf-client.xml");
@@ -321,8 +326,8 @@ public class TransportBindingTest extends AbstractBusClientServerTestBase {
         
         // Make a successful request
         Client client = ((DispatchImpl<DOMSource>) dispatch).getClient();
-        client.getRequestContext().put("security.username", "alice");
-        client.getRequestContext().put("ws-security.sts.client", stsClient);
+        client.getRequestContext().put(SecurityConstants.USERNAME, "alice");
+        client.getRequestContext().put(SecurityConstants.STS_CLIENT, stsClient);
         
         if (test.isStreaming()) {
             client.getRequestContext().put(SecurityConstants.ENABLE_STREAMING_SECURITY, "true");
@@ -337,6 +342,11 @@ public class TransportBindingTest extends AbstractBusClientServerTestBase {
     
     @org.junit.Test
     public void testSAML2DispatchLocation() throws Exception {
+        
+        // Needed to prevent test failure using IBM JDK 
+        if ("IBM Corporation".equals(System.getProperty("java.vendor"))) {
+            System.setProperty("https.protocols", "TLSv1");
+        }
 
         SpringBusFactory bf = new SpringBusFactory();
         URL busFile = TransportBindingTest.class.getResource("cxf-client.xml");
@@ -364,8 +374,8 @@ public class TransportBindingTest extends AbstractBusClientServerTestBase {
         
         // Make a successful request
         Client client = ((DispatchImpl<DOMSource>) dispatch).getClient();
-        client.getRequestContext().put("security.username", "alice");
-        client.getRequestContext().put("ws-security.sts.client", stsClient);
+        client.getRequestContext().put(SecurityConstants.USERNAME, "alice");
+        client.getRequestContext().put(SecurityConstants.STS_CLIENT, stsClient);
         
         if (test.isStreaming()) {
             client.getRequestContext().put(SecurityConstants.ENABLE_STREAMING_SECURITY, "true");
@@ -446,6 +456,6 @@ public class TransportBindingTest extends AbstractBusClientServerTestBase {
     
     private static void doubleIt(DoubleItPortType port, int numToDouble) {
         int resp = port.doubleIt(numToDouble);
-        assertEquals(numToDouble * 2 , resp);
+        assertEquals(numToDouble * 2, resp);
     }
 }

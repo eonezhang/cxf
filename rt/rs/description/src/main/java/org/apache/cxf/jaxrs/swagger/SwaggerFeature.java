@@ -70,7 +70,9 @@ public class SwaggerFeature extends AbstractSwaggerFeature {
         beanConfig.setContact(getContact());
         beanConfig.setLicense(getLicense());
         beanConfig.setLicenseUrl(getLicenseUrl());
+        beanConfig.setTermsOfServiceUrl(getTermsOfServiceUrl());
         beanConfig.setScan(isScan());
+        beanConfig.setFilterClass(getFilterClass());
     }    
 
     @Override
@@ -86,7 +88,7 @@ public class SwaggerFeature extends AbstractSwaggerFeature {
         private ApiListingResourceJSON apiListingResource;
         @Context
         private MessageContext mc;
-        public SwaggerContainerRequestFilter(ApiListingResourceJSON apiListingResource) {
+        SwaggerContainerRequestFilter(ApiListingResourceJSON apiListingResource) {
             this.apiListingResource = apiListingResource;
         }
 

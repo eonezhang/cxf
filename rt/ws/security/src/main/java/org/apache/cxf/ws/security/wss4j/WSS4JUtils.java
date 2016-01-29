@@ -22,12 +22,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.security.Key;
+import java.security.cert.X509Certificate;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Logger;
 
 import javax.crypto.SecretKey;
+import javax.security.auth.callback.CallbackHandler;
 
 import org.apache.cxf.Bus;
 import org.apache.cxf.binding.soap.SoapFault;
@@ -47,9 +50,13 @@ import org.apache.wss4j.common.cache.ReplayCache;
 import org.apache.wss4j.common.cache.ReplayCacheFactory;
 import org.apache.wss4j.common.crypto.Crypto;
 import org.apache.wss4j.common.crypto.CryptoFactory;
+import org.apache.wss4j.common.crypto.JasyptPasswordEncryptor;
 import org.apache.wss4j.common.crypto.PasswordEncryptor;
 import org.apache.wss4j.common.ext.WSSecurityException;
 import org.apache.wss4j.common.util.Loader;
+import org.apache.wss4j.dom.WSConstants;
+import org.apache.wss4j.dom.engine.WSSecurityEngineResult;
+import org.apache.wss4j.dom.handler.WSHandlerResult;
 import org.apache.wss4j.stax.ext.WSSConstants;
 import org.apache.wss4j.stax.securityToken.WSSecurityTokenConstants;
 import org.apache.xml.security.exceptions.XMLSecurityException;
@@ -149,14 +156,14 @@ public final class WSS4JUtils {
             if (securityToken.getTokenType() != null) {
                 if (securityToken.getTokenType() == WSSecurityTokenConstants.EncryptedKeyToken) {
                     cachedTok.setTokenType(WSSConstants.NS_WSS_ENC_KEY_VALUE_TYPE);
-                } else if (securityToken.getTokenType() == WSSecurityTokenConstants.KerberosToken) {
-                    cachedTok.setTokenType(WSSConstants.NS_GSS_Kerberos5_AP_REQ);
-                } else if (securityToken.getTokenType() == WSSecurityTokenConstants.Saml11Token) {
+                } else if (securityToken.getTokenType() == WSSecurityTokenConstants.KERBEROS_TOKEN) {
+                    cachedTok.setTokenType(WSSConstants.NS_GSS_KERBEROS5_AP_REQ);
+                } else if (securityToken.getTokenType() == WSSecurityTokenConstants.SAML_11_TOKEN) {
                     cachedTok.setTokenType(WSSConstants.NS_SAML11_TOKEN_PROFILE_TYPE);
-                } else if (securityToken.getTokenType() == WSSecurityTokenConstants.Saml20Token) {
+                } else if (securityToken.getTokenType() == WSSecurityTokenConstants.SAML_20_TOKEN) {
                     cachedTok.setTokenType(WSSConstants.NS_SAML20_TOKEN_PROFILE_TYPE);
-                } else if (securityToken.getTokenType() == WSSecurityTokenConstants.SecureConversationToken
-                    || securityToken.getTokenType() == WSSecurityTokenConstants.SecurityContextToken) {
+                } else if (securityToken.getTokenType() == WSSecurityTokenConstants.SECURE_CONVERSATION_TOKEN
+                    || securityToken.getTokenType() == WSSecurityTokenConstants.SECURITY_CONTEXT_TOKEN) {
                     cachedTok.setTokenType(WSSConstants.NS_WSC_05_02);
                 }
             }
@@ -236,6 +243,31 @@ public final class WSS4JUtils {
         return properties;
     }
     
+    public static PasswordEncryptor getPasswordEncryptor(Message message) {
+        if (message == null) {
+            return null;
+        }
+        PasswordEncryptor passwordEncryptor = 
+            (PasswordEncryptor)message.getContextualProperty(
+                SecurityConstants.PASSWORD_ENCRYPTOR_INSTANCE
+            );
+        if (passwordEncryptor != null) {
+            return passwordEncryptor;
+        }
+        
+        Object o = SecurityUtils.getSecurityPropertyValue(SecurityConstants.CALLBACK_HANDLER, message);
+        try {
+            CallbackHandler callbackHandler = SecurityUtils.getCallbackHandler(o);
+            if (callbackHandler != null) {
+                return new JasyptPasswordEncryptor(callbackHandler);
+            }
+        } catch (Exception ex) {
+            return null;
+        }
+        
+        return null;
+    }
+    
     public static Crypto loadCryptoFromPropertiesFile(
         Message message,
         String propFilename, 
@@ -311,5 +343,30 @@ public final class WSS4JUtils {
             }
         }
         return signCrypto;
+    }
+    
+    /**
+     * Get the certificate that was used to sign the request
+     */
+    public static X509Certificate getReqSigCert(List<WSHandlerResult> results) {
+        if (results == null || results.isEmpty()) {
+            return null;
+        }
+        
+        for (WSHandlerResult rResult : results) {
+            List<WSSecurityEngineResult> signedResults = 
+                rResult.getActionResults().get(WSConstants.SIGN);
+            
+            if (signedResults != null && !signedResults.isEmpty()) {
+                for (WSSecurityEngineResult signedResult : signedResults) {
+                    if (signedResult.containsKey(WSSecurityEngineResult.TAG_X509_CERTIFICATE)) {
+                        return (X509Certificate)signedResult.get(
+                            WSSecurityEngineResult.TAG_X509_CERTIFICATE);
+                    }
+                }
+            }
+        }
+        
+        return null;
     }
 }

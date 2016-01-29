@@ -583,6 +583,7 @@ public class JettyHTTPServerEngine implements ServerEngine {
                 protected void doStart() throws Exception {
                     setSslContext(createSSLContext(this));
                     super.doStart();
+                    checkKeyStore();
                 }
                 public void checkKeyStore() {
                     //we'll handle this later
@@ -591,8 +592,19 @@ public class JettyHTTPServerEngine implements ServerEngine {
             decorateCXFJettySslSocketConnector(sslcf);
         }
         AbstractConnector result = null;
-        if (!Server.getVersion().startsWith("8")) {
-            result = createConnectorJetty9(sslcf, hosto, porto);
+        
+        int major = 8;
+        int minor = 0;
+        try {
+            String[] version = Server.getVersion().split("\\.");
+            major = Integer.parseInt(version[0]);
+            minor = Integer.parseInt(version[1]);
+        } catch (Exception e) {
+            // unparsable version
+        }
+    
+        if (major >= 9) {
+            result = createConnectorJetty9(sslcf, hosto, porto, major, minor);
         } else {
             result = createConnectorJetty8(sslcf, hosto, porto);
         }        
@@ -612,7 +624,7 @@ public class JettyHTTPServerEngine implements ServerEngine {
         return result;
     }
     
-    AbstractConnector createConnectorJetty9(SslContextFactory sslcf, String hosto, int porto) {
+    AbstractConnector createConnectorJetty9(SslContextFactory sslcf, String hosto, int porto, int major, int minor) {
         //Jetty 9
         AbstractConnector result = null;
         try {
@@ -642,7 +654,8 @@ public class JettyHTTPServerEngine implements ServerEngine {
                                                                                      String.class)
                                                         .newInstance(sslcf, "HTTP/1.1");
                 connectionFactories.add(scf);
-                result.getClass().getMethod("setDefaultProtocol", String.class).invoke(result, "SSL-HTTP/1.1");
+                String proto = (major > 9 || (major == 9 && minor >= 3)) ? "SSL" : "SSL-HTTP/1.1";
+                result.getClass().getMethod("setDefaultProtocol", String.class).invoke(result, proto);
             }
             connectionFactories.add(httpFactory);
             result.getClass().getMethod("setConnectionFactories", Collection.class)

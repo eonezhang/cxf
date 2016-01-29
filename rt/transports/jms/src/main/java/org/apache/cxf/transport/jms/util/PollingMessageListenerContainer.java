@@ -18,9 +18,6 @@
  */
 package org.apache.cxf.transport.jms.util;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -40,10 +37,6 @@ import org.apache.cxf.common.logging.LogUtils;
 public class PollingMessageListenerContainer extends AbstractMessageListenerContainer {
     private static final Logger LOG = LogUtils.getL7dLogger(PollingMessageListenerContainer.class);
 
-    private ExecutorService pollers;
-
-    private int concurrentConsumers = 1;
-
     public PollingMessageListenerContainer(Connection connection, Destination destination,
                                            MessageListener listenerHandler) {
         this.connection = connection;
@@ -56,12 +49,11 @@ public class PollingMessageListenerContainer extends AbstractMessageListenerCont
         @Override
         public void run() {
             while (running) {
-                MessageConsumer consumer = null;
-                Session session = null;
-                try {
+                try (ResourceCloser closer = new ResourceCloser()) {
+                    closer.register(createInitialContext());
                     // Create session early to optimize performance
-                    session = connection.createSession(transacted, acknowledgeMode);
-                    consumer = createConsumer(session);
+                    Session session = closer.register(connection.createSession(transacted, acknowledgeMode));
+                    MessageConsumer consumer = closer.register(createConsumer(session));
                     while (running) {
                         Message message = consumer.receive(1000);
                         try {
@@ -78,9 +70,6 @@ public class PollingMessageListenerContainer extends AbstractMessageListenerCont
                     }
                 } catch (Exception e) {
                     LOG.log(Level.WARNING, "Unexpected exception. Restarting session and consumer", e);
-                } finally {
-                    ResourceCloser.close(consumer);
-                    ResourceCloser.close(session);
                 }
             }
 
@@ -103,9 +92,8 @@ public class PollingMessageListenerContainer extends AbstractMessageListenerCont
         @Override
         public void run() {
             while (running) {
-                MessageConsumer consumer = null;
-                Session session = null;
-                try {
+                try (ResourceCloser closer = new ResourceCloser()) {
+                    closer.register(createInitialContext());
                     final Transaction externalTransaction = transactionManager.getTransaction();
                     if ((externalTransaction != null) && (externalTransaction.getStatus() == Status.STATUS_ACTIVE)) {
                         LOG.log(Level.SEVERE, "External transactions are not supported in XAPoller");
@@ -116,8 +104,8 @@ public class PollingMessageListenerContainer extends AbstractMessageListenerCont
                      * Create session inside transaction to give it the 
                      * chance to enlist itself as a resource
                      */
-                    session = connection.createSession(transacted, acknowledgeMode);
-                    consumer = createConsumer(session);
+                    Session session = closer.register(connection.createSession(transacted, acknowledgeMode));
+                    MessageConsumer consumer = closer.register(createConsumer(session));
                     Message message = consumer.receive(1000);
                     try {
                         if (message != null) {
@@ -127,9 +115,6 @@ public class PollingMessageListenerContainer extends AbstractMessageListenerCont
                     } catch (Throwable e) {
                         LOG.log(Level.WARNING, "Exception while processing jms message in cxf. Rolling back", e);
                         safeRollBack(session);
-                    } finally {
-                        ResourceCloser.close(consumer);
-                        ResourceCloser.close(session);
                     }
                 } catch (Exception e) {
                     LOG.log(Level.WARNING, "Unexpected exception. Restarting session and consumer", e);
@@ -164,10 +149,9 @@ public class PollingMessageListenerContainer extends AbstractMessageListenerCont
             return;
         }
         running = true;
-        pollers = Executors.newFixedThreadPool(concurrentConsumers);
-        for (int c = 0; c < concurrentConsumers; c++) {
+        for (int c = 0; c < getConcurrentConsumers(); c++) {
             Runnable poller = (transactionManager != null) ? new XAPoller() : new Poller(); 
-            pollers.execute(poller);
+            getExecutor().execute(poller);
         }
     }
 
@@ -178,14 +162,7 @@ public class PollingMessageListenerContainer extends AbstractMessageListenerCont
             return;
         }
         running = false;
-        pollers.shutdown();
-        try {
-            pollers.awaitTermination(10, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            // Ignore
-        }
-        pollers.shutdownNow();
-        pollers = null;
+        super.stop();        
     }
 
     @Override
@@ -193,7 +170,4 @@ public class PollingMessageListenerContainer extends AbstractMessageListenerCont
         stop();
     }
 
-    public void setConcurrentConsumers(int concurrentConsumers) {
-        this.concurrentConsumers = concurrentConsumers;
-    }
 }

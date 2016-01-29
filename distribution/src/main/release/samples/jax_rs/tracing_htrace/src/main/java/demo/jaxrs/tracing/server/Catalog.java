@@ -27,7 +27,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import javax.json.Json;
-import javax.json.JsonArray;
 import javax.json.JsonObject;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.FormParam;
@@ -37,6 +36,8 @@ import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
+import javax.ws.rs.container.AsyncResponse;
+import javax.ws.rs.container.Suspended;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -59,7 +60,7 @@ public class Catalog {
         final Configuration configuration = HBaseConfiguration.create();
         configuration.set("hbase.zookeeper.quorum", "hbase");
         configuration.set("hbase.zookeeper.property.clientPort", "2181");
-        configuration.set(SpanReceiverHost.SPAN_RECEIVERS_CONF_KEY, TracingConfiguration.SPAN_RECEIVER.getName());
+        configuration.set(SpanReceiverHost.SPAN_RECEIVERS_CONF_KEY, TracingConfiguration.HBASE_SPAN_RECEIVER.getName());
         store = new CatalogStore(configuration, "catalog");
     }
     
@@ -97,8 +98,22 @@ public class Catalog {
     
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public JsonArray getBooks() throws IOException {
-        return store.scan();
+    public void getBooks(@Suspended final AsyncResponse response, 
+            @Context final TracerContext tracing) throws Exception {
+        tracing.continueSpan(new Traceable<Void>() {
+            @Override
+            public Void call(final TracerContext context) throws Exception {
+                executor.submit(tracing.wrap("Looking for books", new Traceable<Void>() {
+                    @Override
+                    public Void call(final TracerContext context) throws Exception {
+                        response.resume(store.scan());
+                        return null;
+                    }
+                }));
+                
+                return null;
+            }
+        });
     }
     
     @GET

@@ -27,28 +27,43 @@ import org.apache.cxf.rs.security.oidc.common.IdToken;
 
 public class OidcSecurityContext extends SimpleSecurityContext implements SecurityContext {
     private OidcClientTokenContext oidcContext;
+
     public OidcSecurityContext(IdToken token) {
         this(new OidcClientTokenContextImpl(token));
     }
+
     public OidcSecurityContext(OidcClientTokenContext oidcContext) {
-        super(getUserName(oidcContext));
+        super(getPrincipalName(oidcContext));
         this.oidcContext = oidcContext;
     }
+
     public OidcClientTokenContext getOidcContext() {
         return oidcContext;
     }
-    private static String getUserName(OidcClientTokenContext oidcContext) {
+
+    protected static String getPrincipalName(OidcClientTokenContext oidcContext) {
+        String name = null;
         if (oidcContext.getUserInfo() != null) {
-            return oidcContext.getUserInfo().getEmail();
-        } else {
-            return oidcContext.getIdToken().getSubject();
+            name = oidcContext.getUserInfo().getSubject();
+            if (name == null) {
+                name = oidcContext.getUserInfo().getEmail();
+            }
         }
+        if (name == null && oidcContext.getIdToken() != null) {
+            name = oidcContext.getIdToken().getSubject();
+            if (name == null) {
+                name = oidcContext.getIdToken().getEmail();
+            }
+        }
+        return name;
     }
+
     @Override
     public boolean isSecure() {
         String value = HttpUtils.getEndpointAddress(JAXRSUtils.getCurrentMessage());
         return value.startsWith("https://");
     }
+
     @Override
     public String getAuthenticationScheme() {
         return "OIDC";

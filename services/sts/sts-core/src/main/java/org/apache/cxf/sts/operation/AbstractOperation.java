@@ -19,11 +19,8 @@
 
 package org.apache.cxf.sts.operation;
 
-import java.net.URI;
 import java.security.Principal;
-import java.security.cert.X509Certificate;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Set;
@@ -39,7 +36,6 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.apache.cxf.common.logging.LogUtils;
 import org.apache.cxf.helpers.DOMUtils;
-import org.apache.cxf.rt.security.claims.Claim;
 import org.apache.cxf.rt.security.claims.ClaimCollection;
 import org.apache.cxf.sts.IdentityMapper;
 import org.apache.cxf.sts.QNameConstants;
@@ -77,19 +73,12 @@ import org.apache.cxf.ws.security.sts.provider.model.secext.ReferenceType;
 import org.apache.cxf.ws.security.sts.provider.model.secext.SecurityTokenReferenceType;
 import org.apache.cxf.ws.security.sts.provider.model.utility.AttributedDateTime;
 import org.apache.cxf.ws.security.tokenstore.TokenStore;
-import org.apache.wss4j.common.WSEncryptionPart;
 import org.apache.wss4j.common.ext.WSSecurityException;
 import org.apache.wss4j.common.util.XMLUtils;
 import org.apache.wss4j.dom.WSConstants;
-import org.apache.wss4j.dom.WSSecurityEngineResult;
-import org.apache.wss4j.dom.handler.WSHandlerConstants;
-import org.apache.wss4j.dom.handler.WSHandlerResult;
-import org.apache.wss4j.dom.message.WSSecEncrypt;
 import org.apache.wss4j.dom.message.WSSecEncryptedKey;
 import org.apache.wss4j.dom.util.XmlSchemaDateFormat;
-import org.apache.wss4j.stax.securityEvent.WSSecurityEventConstants;
 import org.apache.xml.security.exceptions.XMLSecurityException;
-import org.apache.xml.security.stax.securityEvent.AbstractSecuredElementSecurityEvent;
 import org.apache.xml.security.stax.securityEvent.SecurityEvent;
 import org.apache.xml.security.stax.securityEvent.SecurityEventConstants;
 import org.apache.xml.security.stax.securityEvent.TokenSecurityEvent;
@@ -299,84 +288,16 @@ public abstract class AbstractOperation {
 
         XmlSchemaDateFormat fmt = new XmlSchemaDateFormat();
         created.setValue(fmt.format(creationTime));
-        LOG.fine("Token lifetime creation: " + created.getValue());
         expires.setValue(fmt.format(expirationTime));
-        LOG.fine("Token lifetime expiration: " + expires.getValue());
+        if (LOG.isLoggable(Level.FINE)) {
+            LOG.fine("Token lifetime creation: " + created.getValue());
+            LOG.fine("Token lifetime expiration: " + expires.getValue());
+        }
         
         LifetimeType lifetimeType = QNameConstants.WS_TRUST_FACTORY.createLifetimeType();
         lifetimeType.setCreated(created);
         lifetimeType.setExpires(expires);
         return lifetimeType;
-    }
-    
-    /**
-     * Encrypt a Token element using the given arguments.
-     */
-    protected Element encryptToken(
-        Element element, 
-        String id, 
-        EncryptionProperties encryptionProperties,
-        KeyRequirements keyRequirements,
-        WebServiceContext context
-    ) throws WSSecurityException {
-        String name = encryptionProperties.getEncryptionName();
-        if (name == null) {
-            name = stsProperties.getEncryptionUsername();
-        }
-        if (name == null) {
-            LOG.fine("No encryption alias is configured");
-            return element;
-        }
-        
-        // Get the encryption algorithm to use
-        String encryptionAlgorithm = keyRequirements.getEncryptionAlgorithm();
-        if (encryptionAlgorithm == null) {
-            // If none then default to what is configured
-            encryptionAlgorithm = encryptionProperties.getEncryptionAlgorithm();
-        } else {
-            List<String> supportedAlgorithms = 
-                encryptionProperties.getAcceptedEncryptionAlgorithms();
-            if (!supportedAlgorithms.contains(encryptionAlgorithm)) {
-                encryptionAlgorithm = encryptionProperties.getEncryptionAlgorithm();
-                LOG.fine("EncryptionAlgorithm not supported, defaulting to: " + encryptionAlgorithm);
-            }
-        }
-        // Get the key-wrap algorithm to use
-        String keyWrapAlgorithm = keyRequirements.getKeywrapAlgorithm();
-        if (keyWrapAlgorithm == null) {
-            // If none then default to what is configured
-            keyWrapAlgorithm = encryptionProperties.getKeyWrapAlgorithm();
-        } else {
-            List<String> supportedAlgorithms = 
-                encryptionProperties.getAcceptedKeyWrapAlgorithms();
-            if (!supportedAlgorithms.contains(keyWrapAlgorithm)) {
-                keyWrapAlgorithm = encryptionProperties.getKeyWrapAlgorithm();
-                LOG.fine("KeyWrapAlgorithm not supported, defaulting to: " + keyWrapAlgorithm);
-            }
-        }
-        
-        WSSecEncrypt builder = new WSSecEncrypt();
-        if (WSHandlerConstants.USE_REQ_SIG_CERT.equals(name)) {
-            X509Certificate cert = getReqSigCert(context.getMessageContext());
-            builder.setUseThisCert(cert);
-        } else {
-            builder.setUserInfo(name);
-        }
-        builder.setKeyIdentifierType(encryptionProperties.getKeyIdentifierType());
-        builder.setSymmetricEncAlgorithm(encryptionAlgorithm);
-        builder.setKeyEncAlgo(keyWrapAlgorithm);
-        builder.setEmbedEncryptedKey(true);
-        
-        WSEncryptionPart encryptionPart = new WSEncryptionPart(id, "Element");
-        encryptionPart.setElement(element);
-        
-        Document doc = element.getOwnerDocument();
-        doc.appendChild(element);
-                                 
-        builder.prepare(element.getOwnerDocument(), stsProperties.getEncryptionCrypto());
-        builder.encryptForRef(null, Collections.singletonList(encryptionPart));
-        
-        return doc.getDocumentElement();
     }
     
     /**
@@ -405,7 +326,9 @@ public abstract class AbstractOperation {
                 encryptionProperties.getAcceptedKeyWrapAlgorithms();
             if (!supportedAlgorithms.contains(keyWrapAlgorithm)) {
                 keyWrapAlgorithm = encryptionProperties.getKeyWrapAlgorithm();
-                LOG.fine("KeyWrapAlgorithm not supported, defaulting to: " + keyWrapAlgorithm);
+                if (LOG.isLoggable(Level.FINE)) {
+                    LOG.fine("KeyWrapAlgorithm not supported, defaulting to: " + keyWrapAlgorithm);
+                }
             }
         }
         
@@ -467,6 +390,7 @@ public abstract class AbstractOperation {
         providerParameters.setPrincipal(context.getUserPrincipal());
         providerParameters.setWebServiceContext(context);
         providerParameters.setTokenStore(getTokenStore());
+        providerParameters.setEncryptToken(encryptIssuedToken);
         
         KeyRequirements keyRequirements = requestRequirements.getKeyRequirements();
         TokenRequirements tokenRequirements = requestRequirements.getTokenRequirements();
@@ -475,7 +399,9 @@ public abstract class AbstractOperation {
         
         // Extract AppliesTo
         String address = extractAddressFromAppliesTo(tokenRequirements.getAppliesTo());
-        LOG.fine("The AppliesTo address that has been received is: " + address);
+        if (LOG.isLoggable(Level.FINE)) {
+            LOG.fine("The AppliesTo address that has been received is: " + address);
+        }
         providerParameters.setAppliesToAddress(address);
         
         // Get the realm of the request
@@ -530,58 +456,6 @@ public abstract class AbstractOperation {
         providerParameters.setEncryptionProperties(encryptionProperties);
         
         return providerParameters;
-    }
-    
-    /**
-     * Get the X509Certificate associated with the signature that was received. This cert is to be used
-     * for encrypting the issued token.
-     */
-    private X509Certificate getReqSigCert(MessageContext context) {
-        @SuppressWarnings("unchecked")
-        List<WSHandlerResult> results = 
-            (List<WSHandlerResult>) context.get(WSHandlerConstants.RECV_RESULTS);
-        // DOM
-        if (results != null) {
-            for (WSHandlerResult rResult : results) {
-                List<WSSecurityEngineResult> signedResults = 
-                    rResult.getActionResults().get(WSConstants.SIGN);
-                if (signedResults != null) {
-                    for (WSSecurityEngineResult wser : signedResults) {
-                        X509Certificate cert = 
-                            (X509Certificate)wser.get(WSSecurityEngineResult.TAG_X509_CERTIFICATE);
-                        if (cert != null) {
-                            return cert;
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Streaming
-        @SuppressWarnings("unchecked")
-        final List<SecurityEvent> incomingEventList = 
-            (List<SecurityEvent>) context.get(SecurityEvent.class.getName() + ".in");
-        if (incomingEventList != null) {
-            for (SecurityEvent incomingEvent : incomingEventList) {
-                if (WSSecurityEventConstants.SignedPart == incomingEvent.getSecurityEventType()
-                    || WSSecurityEventConstants.SignedElement 
-                        == incomingEvent.getSecurityEventType()) {
-                    org.apache.xml.security.stax.securityToken.SecurityToken token = 
-                        ((AbstractSecuredElementSecurityEvent)incomingEvent).getSecurityToken();
-                    try {
-                        if (token != null && token.getX509Certificates() != null
-                            && token.getX509Certificates().length > 0) {
-                            return token.getX509Certificates()[0];
-                        }
-                    } catch (XMLSecurityException ex) {
-                        LOG.log(Level.FINE, ex.getMessage(), ex);
-                        return null;
-                    }
-                }
-            }
-        }
-        
-        return null;
     }
     
     protected TokenValidatorResponse validateReceivedToken(
@@ -680,27 +554,6 @@ public abstract class AbstractOperation {
         }
     }
     
-    protected void checkClaimsSupport(ClaimCollection requestedClaims) {
-        if (requestedClaims != null) {
-            List<URI> unhandledClaimTypes = new ArrayList<>();
-            for (Claim requestedClaim : requestedClaims) {
-                if (!claimsManager.getSupportedClaimTypes().contains(requestedClaim.getClaimType()) 
-                        && !requestedClaim.isOptional()) {
-                    unhandledClaimTypes.add(requestedClaim.getClaimType());
-                }
-            }
-
-            if (unhandledClaimTypes.size() > 0) {
-                LOG.log(Level.WARNING, "The requested claim " + unhandledClaimTypes.toString() 
-                        + " cannot be fulfilled by the STS.");
-                throw new STSException(
-                        "The requested claim " + unhandledClaimTypes.toString() 
-                        + " cannot be fulfilled by the STS."
-                );
-            }
-        }
-    }
-
     protected void processValidToken(TokenProviderParameters providerParameters,
             ReceivedToken validatedToken, TokenValidatorResponse tokenResponse) {
         // Map the principal (if it exists)

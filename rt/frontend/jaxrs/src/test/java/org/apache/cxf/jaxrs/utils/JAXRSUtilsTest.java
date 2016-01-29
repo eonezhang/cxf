@@ -25,6 +25,7 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -74,6 +75,7 @@ import org.apache.cxf.jaxrs.SimpleFactory;
 import org.apache.cxf.jaxrs.Timezone;
 import org.apache.cxf.jaxrs.ext.ContextProvider;
 import org.apache.cxf.jaxrs.impl.HttpHeadersImpl;
+import org.apache.cxf.jaxrs.impl.HttpServletRequestFilter;
 import org.apache.cxf.jaxrs.impl.HttpServletResponseFilter;
 import org.apache.cxf.jaxrs.impl.MetadataMap;
 import org.apache.cxf.jaxrs.impl.PathSegmentImpl;
@@ -121,8 +123,8 @@ public class JAXRSUtilsTest extends Assert {
     @Test
     public void testFormParametersUTF8Encoding() throws Exception {
         JAXRSUtils.intersectMimeTypes("application/json", "application/json+v2");
-        doTestFormParamsWithEncoding("UTF-8", true);
-        doTestFormParamsWithEncoding("UTF-8", false);
+        doTestFormParamsWithEncoding(StandardCharsets.UTF_8.name(), true);
+        doTestFormParamsWithEncoding(StandardCharsets.UTF_8.name(), false);
     }
     
     @Test
@@ -1718,7 +1720,7 @@ public class JAXRSUtilsTest extends Assert {
         List<Object> params = 
             JAXRSUtils.processParameters(ori, new MetadataMap<String, String>(), m);
         assertEquals("4 parameters expected", 4, params.size());
-        assertSame(request.getClass(), params.get(0).getClass());
+        assertSame(request.getClass(), ((HttpServletRequestFilter)params.get(0)).getRequest().getClass());
         assertSame(response.getClass(), params.get(1).getClass());
         assertSame(context.getClass(), params.get(2).getClass());
         assertSame(config.getClass(), params.get(3).getClass());
@@ -1789,8 +1791,10 @@ public class JAXRSUtilsTest extends Assert {
                    ((ThreadLocalProxy<ServletContext>)c.getServletContext()).get());
         assertSame(servletContextMock, 
                    ((ThreadLocalProxy<ServletContext>)c.getSuperServletContext()).get());
-        assertSame(httpRequest, 
-                   ((ThreadLocalProxy<HttpServletRequest>)c.getServletRequest()).get());
+        HttpServletRequest currentReq = 
+            ((ThreadLocalProxy<HttpServletRequest>)c.getServletRequest()).get();
+        assertSame(httpRequest,
+                   ((HttpServletRequestFilter)currentReq).getRequest());
         HttpServletResponseFilter filter = (
             HttpServletResponseFilter)((ThreadLocalProxy<HttpServletResponse>)c.getServletResponse()).get();
         assertSame(httpResponse, filter.getResponse());
@@ -1815,8 +1819,10 @@ public class JAXRSUtilsTest extends Assert {
         InjectionUtils.injectContextFields(c, cri, m);
         assertSame(servletContextMock, 
                    ((ThreadLocalProxy<ServletContext>)c.getServletContextResource()).get());
-        assertSame(httpRequest, 
-                   ((ThreadLocalProxy<HttpServletRequest>)c.getServletRequestResource()).get());
+        HttpServletRequest currentReq = 
+            ((ThreadLocalProxy<HttpServletRequest>)c.getServletRequestResource()).get();
+        assertSame(httpRequest,
+                   ((HttpServletRequestFilter)currentReq).getRequest());
         HttpServletResponseFilter filter = (
             HttpServletResponseFilter)((ThreadLocalProxy<HttpServletResponse>)c.getServletResponseResource())
                 .get();
@@ -1960,7 +1966,8 @@ public class JAXRSUtilsTest extends Assert {
         m.put(AbstractHTTPDestination.HTTP_CONTEXT, context);
         
         InjectionUtils.injectContextFields(c, ori.getClassResourceInfo(), m);
-        assertSame(request.getClass(), c.getServletRequestResource().getClass());
+        assertSame(request.getClass(), 
+                   ((HttpServletRequestFilter)c.getServletRequestResource()).getRequest().getClass());
         HttpServletResponseFilter filter = (HttpServletResponseFilter)c.getServletResponseResource();
         assertSame(response.getClass(), filter.getResponse().getClass());
         assertSame(context.getClass(), c.getServletContextResource().getClass());
@@ -1970,7 +1977,8 @@ public class JAXRSUtilsTest extends Assert {
         assertNotNull(c.getServletRequestResource());
         assertNotNull(c.getServletResponseResource());
         assertNotNull(c.getServletContextResource());
-        assertSame(request.getClass(), c.getServletRequest().getClass());
+        assertSame(request.getClass(), 
+                   ((HttpServletRequestFilter)c.getServletRequestResource()).getRequest().getClass());
         filter = (HttpServletResponseFilter)c.getServletResponse();
         assertSame(response.getClass(), filter.getResponse().getClass());
         assertSame(context.getClass(), c.getServletContext().getClass());

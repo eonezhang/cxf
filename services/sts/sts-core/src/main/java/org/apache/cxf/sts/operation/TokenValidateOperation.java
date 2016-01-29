@@ -26,8 +26,11 @@ import java.util.logging.Logger;
 import javax.xml.bind.JAXBElement;
 import javax.xml.ws.WebServiceContext;
 
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+
 import org.apache.cxf.common.logging.LogUtils;
-import org.apache.cxf.rt.security.claims.ClaimCollection;
+import org.apache.cxf.helpers.DOMUtils;
 import org.apache.cxf.sts.QNameConstants;
 import org.apache.cxf.sts.RealmParser;
 import org.apache.cxf.sts.STSConstants;
@@ -125,10 +128,6 @@ public class TokenValidateOperation extends AbstractOperation implements Validat
                 processValidToken(providerParameters, validateTarget, tokenResponse);
                 
                 // Check if the requested claims can be handled by the configured claim handlers
-                ClaimCollection requestedClaims = providerParameters.getRequestedPrimaryClaims();
-                checkClaimsSupport(requestedClaims);
-                requestedClaims = providerParameters.getRequestedSecondaryClaims();
-                checkClaimsSupport(requestedClaims);
                 providerParameters.setClaimsManager(claimsManager);
                 
                 Map<String, Object> additionalProperties = tokenResponse.getAdditionalProperties();
@@ -229,7 +228,14 @@ public class TokenValidateOperation extends AbstractOperation implements Validat
                 QNameConstants.WS_TRUST_FACTORY.createRequestedSecurityTokenType();
             JAXBElement<RequestedSecurityTokenType> requestedToken = 
                 QNameConstants.WS_TRUST_FACTORY.createRequestedSecurityToken(requestedTokenType);
-            requestedTokenType.setAny(tokenProviderResponse.getToken());
+            if (tokenProviderResponse.getToken() instanceof String) {
+                Document doc = DOMUtils.newDocument();
+                Element tokenWrapper = doc.createElementNS(null, "TokenWrapper");
+                tokenWrapper.setTextContent((String)tokenProviderResponse.getToken());
+                requestedTokenType.setAny(tokenWrapper);
+            } else {
+                requestedTokenType.setAny(tokenProviderResponse.getToken());
+            }
             response.getAny().add(requestedToken);
             
             // Lifetime

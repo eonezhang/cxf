@@ -48,7 +48,7 @@ import org.apache.cxf.ws.security.wss4j.CryptoCoverageUtil.CoverageType;
 import org.apache.wss4j.common.ext.WSSecurityException;
 import org.apache.wss4j.dom.WSConstants;
 import org.apache.wss4j.dom.WSDataRef;
-import org.apache.wss4j.dom.WSSecurityEngineResult;
+import org.apache.wss4j.dom.engine.WSSecurityEngineResult;
 import org.apache.wss4j.dom.handler.WSHandlerConstants;
 import org.apache.wss4j.dom.handler.WSHandlerResult;
 
@@ -91,8 +91,7 @@ public class CryptoCoverageChecker extends AbstractSoapInterceptor {
      * @param xPaths
      *            a list of XPath expressions
      */
-    public CryptoCoverageChecker(Map<String, String> prefixes, List<XPathExpression> xPaths)
-    {
+    public CryptoCoverageChecker(Map<String, String> prefixes, List<XPathExpression> xPaths) {
         super(Phase.PRE_PROTOCOL);
         this.addAfter(WSS4JInInterceptor.class.getName());
         this.setPrefixes(prefixes);

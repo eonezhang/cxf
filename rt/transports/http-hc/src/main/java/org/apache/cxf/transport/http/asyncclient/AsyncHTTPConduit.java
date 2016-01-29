@@ -220,7 +220,7 @@ public class AsyncHTTPConduit extends URLConnectionHTTPConduit {
         RequestConfig.Builder b = RequestConfig.custom()
             .setSocketTimeout((int) csPolicy.getReceiveTimeout())
             .setConnectTimeout((int) csPolicy.getConnectionTimeout());
-        Proxy p = proxyFactory.createProxy(csPolicy , uri);
+        Proxy p = proxyFactory.createProxy(csPolicy, uri);
         if (p != null && p.type() != Proxy.Type.DIRECT) {
             InetSocketAddress isa = (InetSocketAddress)p.address();
             HttpHost proxy = new HttpHost(isa.getHostName(), isa.getPort());
@@ -771,7 +771,6 @@ public class AsyncHTTPConduit extends URLConnectionHTTPConduit {
                 } else if (isChunked || isEofTerminated) {
                     // ensure chunked or EOF-terminated response is non-empty
                     try {
-                        @SuppressWarnings("resource")
                         PushbackInputStream pin = 
                             new PushbackInputStream(getInputStream());
                         int c = pin.read();

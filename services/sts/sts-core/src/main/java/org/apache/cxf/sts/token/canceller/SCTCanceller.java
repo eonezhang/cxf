@@ -38,7 +38,7 @@ import org.apache.cxf.ws.security.tokenstore.SecurityToken;
 import org.apache.cxf.ws.security.trust.STSUtils;
 import org.apache.wss4j.common.ext.WSSecurityException;
 import org.apache.wss4j.dom.WSConstants;
-import org.apache.wss4j.dom.WSSecurityEngineResult;
+import org.apache.wss4j.dom.engine.WSSecurityEngineResult;
 import org.apache.wss4j.dom.handler.WSHandlerConstants;
 import org.apache.wss4j.dom.handler.WSHandlerResult;
 import org.apache.wss4j.dom.message.token.SecurityContextToken;
@@ -186,7 +186,7 @@ public class SCTCanceller implements TokenCanceller {
             (List<SecurityEvent>) messageContext.get(SecurityEvent.class.getName() + ".in");
         if (incomingEventList != null) {
             for (SecurityEvent incomingEvent : incomingEventList) {
-                if (WSSecurityEventConstants.SignedPart == incomingEvent.getSecurityEventType()
+                if (WSSecurityEventConstants.SIGNED_PART == incomingEvent.getSecurityEventType()
                     || WSSecurityEventConstants.SignedElement 
                         == incomingEvent.getSecurityEventType()) {
                     org.apache.xml.security.stax.securityToken.SecurityToken token = 

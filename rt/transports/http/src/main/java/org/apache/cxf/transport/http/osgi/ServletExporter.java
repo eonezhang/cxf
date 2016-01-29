@@ -39,7 +39,7 @@ class ServletExporter implements ManagedService {
     private ServiceRegistration serviceRegistration;
     private HttpService httpService;
     
-    public ServletExporter(Servlet servlet, HttpService httpService) {
+    ServletExporter(Servlet servlet, HttpService httpService) {
         this.servlet = servlet;
         this.httpService = httpService;
     }
@@ -55,6 +55,8 @@ class ServletExporter implements ManagedService {
             properties = new Properties();
         }
         Properties sprops = new Properties();
+        sprops.put("init-prefix", 
+                   getProp(properties, "org.apache.cxf.servlet.init-prefix", ""));
         sprops.put("servlet-name", 
                    getProp(properties, "org.apache.cxf.servlet.name", "cxf-osgi-transport-servlet"));
         sprops.put("hide-service-list-page", 

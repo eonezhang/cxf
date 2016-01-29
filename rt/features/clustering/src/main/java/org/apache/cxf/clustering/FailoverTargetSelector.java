@@ -47,8 +47,10 @@ import org.apache.cxf.transport.Conduit;
  */
 public class FailoverTargetSelector extends AbstractConduitSelector {
 
-    private static final Logger LOG =
-        LogUtils.getL7dLogger(FailoverTargetSelector.class);
+    private static final Logger LOG = LogUtils.getL7dLogger(FailoverTargetSelector.class);
+    private static final String COMPLETE_IF_SERVICE_NOT_AVAIL_PROPERTY = 
+        "org.apache.cxf.transport.complete_if_service_not_available";
+
     protected ConcurrentHashMap<InvocationKey, InvocationContext> inProgress 
         = new ConcurrentHashMap<InvocationKey, InvocationContext>();
     protected FailoverStrategy failoverStrategy;
@@ -99,7 +101,10 @@ public class FailoverTargetSelector extends AbstractConduitSelector {
     }
 
     protected void setupExchangeExceptionProperties(Exchange ex) {
-        ex.remove("org.apache.cxf.transport.no_io_exceptions");
+        if (!isSupportNotAvailableErrorsOnly()) {
+            ex.remove("org.apache.cxf.transport.no_io_exceptions");
+        }
+        ex.put(COMPLETE_IF_SERVICE_NOT_AVAIL_PROPERTY, true);
     }
     
     /**
@@ -134,8 +139,9 @@ public class FailoverTargetSelector extends AbstractConduitSelector {
         }
         
         boolean failover = false;
-        if (requiresFailover(exchange)) {
-            onFailure(invocation);
+        final Exception ex = getExceptionIfPresent(exchange);
+        if (requiresFailover(exchange, ex)) {
+            onFailure(invocation, ex);
             Conduit old = (Conduit)exchange.getOutMessage().remove(Conduit.class.getName());
             
             Endpoint failoverTarget = getFailoverTarget(exchange, invocation);
@@ -144,6 +150,7 @@ public class FailoverTargetSelector extends AbstractConduitSelector {
                 removeConduit(old);
                 failover = performFailover(exchange, invocation);
             } else {
+                exchange.remove(COMPLETE_IF_SERVICE_NOT_AVAIL_PROPERTY);
                 setOriginalEndpoint(invocation);
             }
         } else {
@@ -202,7 +209,7 @@ public class FailoverTargetSelector extends AbstractConduitSelector {
     protected void onSuccess(InvocationContext context) {
     }
     
-    protected void onFailure(InvocationContext context) {
+    protected void onFailure(InvocationContext context, Exception ex) {
     }
     
     /**
@@ -254,11 +261,7 @@ public class FailoverTargetSelector extends AbstractConduitSelector {
      * @param exchange the current Exchange
      * @return boolean true if a failover should be attempted
      */
-    protected boolean requiresFailover(Exchange exchange) {
-        Message outMessage = exchange.getOutMessage();
-        Exception ex = outMessage.get(Exception.class) != null
-                       ? outMessage.get(Exception.class)
-                       : exchange.get(Exception.class);
+    protected boolean requiresFailover(Exchange exchange, Exception ex) {
         getLogger().log(Level.FINE,
                         "CHECK_LAST_INVOKE_FAILED",
                         new Object[] {ex != null});
@@ -273,13 +276,20 @@ public class FailoverTargetSelector extends AbstractConduitSelector {
                             "CHECK_FAILURE_IN_TRANSPORT",
                             new Object[] {ex, failover});
         }
-        if (failover 
-            && isSupportNotAvailableErrorsOnly()
-            && exchange.get(Message.RESPONSE_CODE) != null
-            && !PropertyUtils.isTrue(exchange.get("org.apache.cxf.transport.service_not_available"))) { 
-            failover = false;
+
+        if (isSupportNotAvailableErrorsOnly() && exchange.get(Message.RESPONSE_CODE) != null) {
+            failover = PropertyUtils.isTrue(exchange.get("org.apache.cxf.transport.service_not_available"));
         }
+
         return failover;
+    }
+
+    private Exception getExceptionIfPresent(Exchange exchange) {
+        Message outMessage = exchange.getOutMessage();
+        Exception ex = outMessage.get(Exception.class) != null
+                       ? outMessage.get(Exception.class)
+                       : exchange.get(Exception.class);
+        return ex;
     }
     
     /**
@@ -291,22 +301,7 @@ public class FailoverTargetSelector extends AbstractConduitSelector {
      */
     protected Endpoint getFailoverTarget(Exchange exchange,
                                        InvocationContext invocation) {
-        List<String> alternateAddresses = null;
-        if (!invocation.hasAlternates()) {
-            // no previous failover attempt on this invocation
-            //
-            alternateAddresses = 
-                getStrategy().getAlternateAddresses(exchange);
-            if (alternateAddresses != null) {
-                invocation.setAlternateAddresses(alternateAddresses);
-            } else {
-                invocation.setAlternateEndpoints(
-                    getStrategy().getAlternateEndpoints(exchange));
-            }
-        } else {
-            alternateAddresses = invocation.getAlternateAddresses();
-        }
-
+        List<String> alternateAddresses = updateContextAlternatives(exchange, invocation);
         Endpoint failoverTarget = null;
         if (alternateAddresses != null) {
             String alternateAddress = 
@@ -323,6 +318,32 @@ public class FailoverTargetSelector extends AbstractConduitSelector {
                                  invocation.getAlternateEndpoints());
         }
         return failoverTarget;
+    }
+
+    /**
+     * Fetches and updates the alternative address or/and alternative endpoints 
+     * (depending on the strategy) for current invocation context.
+     * @param exchange the current Exchange
+     * @param invocation the current InvocationContext
+     * @return alternative addresses
+     */
+    protected List<String> updateContextAlternatives(Exchange exchange, InvocationContext invocation) {
+        List<String> alternateAddresses = null;
+        if (!invocation.hasAlternates()) {
+            // no previous failover attempt on this invocation
+            //
+            alternateAddresses = 
+                getStrategy().getAlternateAddresses(exchange);
+            if (alternateAddresses != null) {
+                invocation.setAlternateAddresses(alternateAddresses);
+            } else {
+                invocation.setAlternateEndpoints(
+                    getStrategy().getAlternateEndpoints(exchange));
+            }
+        } else {
+            alternateAddresses = invocation.getAlternateAddresses();
+        }
+        return alternateAddresses;
     }
     
     /**

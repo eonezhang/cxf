@@ -35,8 +35,9 @@ public class AuthorizationCodeRegistration {
     private String redirectUri;
     private UserSubject subject;
     private String audience;
+    private String nonce;
     private String clientCodeChallenge;
-    
+    private boolean preauthorizedTokenAvailable;
     /**
      * Sets the {@link Client} reference
      * @param client the client
@@ -125,5 +126,17 @@ public class AuthorizationCodeRegistration {
     }
     public void setClientCodeChallenge(String clientCodeChallenge) {
         this.clientCodeChallenge = clientCodeChallenge;
+    }
+    public String getNonce() {
+        return nonce;
+    }
+    public void setNonce(String nonce) {
+        this.nonce = nonce;
+    }
+    public boolean isPreauthorizedTokenAvailable() {
+        return preauthorizedTokenAvailable;
+    }
+    public void setPreauthorizedTokenAvailable(boolean preauthorizedTokenAvailable) {
+        this.preauthorizedTokenAvailable = preauthorizedTokenAvailable;
     }
 }

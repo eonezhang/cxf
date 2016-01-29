@@ -33,9 +33,11 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
@@ -56,6 +58,7 @@ import javax.xml.stream.XMLStreamWriter;
 
 import org.apache.cxf.Bus;
 import org.apache.cxf.common.logging.LogUtils;
+import org.apache.cxf.common.util.PropertyUtils;
 import org.apache.cxf.endpoint.ClientLifeCycleManager;
 import org.apache.cxf.endpoint.ConduitSelector;
 import org.apache.cxf.endpoint.Endpoint;
@@ -82,6 +85,7 @@ import org.apache.cxf.message.Exchange;
 import org.apache.cxf.message.ExchangeImpl;
 import org.apache.cxf.message.Message;
 import org.apache.cxf.message.MessageContentsList;
+import org.apache.cxf.message.MessageImpl;
 import org.apache.cxf.message.MessageUtils;
 import org.apache.cxf.phase.AbstractPhaseInterceptor;
 import org.apache.cxf.phase.Phase;
@@ -103,10 +107,15 @@ public abstract class AbstractClient implements Client {
     protected static final String HTTP_SCHEME = "http";
     
     private static final String PROXY_PROPERTY = "jaxrs.proxy";
-    private static final String HEADER_SPLIT_PROPERTY =
-        "org.apache.cxf.http.header.split";
+    private static final String HEADER_SPLIT_PROPERTY = "org.apache.cxf.http.header.split";
+    private static final String SERVICE_NOT_AVAIL_PROPERTY = "org.apache.cxf.transport.service_not_available";
+    private static final String COMPLETE_IF_SERVICE_NOT_AVAIL_PROPERTY = 
+        "org.apache.cxf.transport.complete_if_service_not_available";
+    
     private static final Logger LOG = LogUtils.getL7dLogger(AbstractClient.class);
-        
+    private static final Set<String> KNOWN_METHODS = new HashSet<String>(
+        Arrays.asList("GET", "POST", "HEAD", "OPTIONS", "PUT", "DELETE", "TRACE"));
+    
     protected ClientConfiguration cfg = new ClientConfiguration();
     private ClientState state;
     private AtomicBoolean closed = new AtomicBoolean(); 
@@ -517,7 +526,7 @@ public abstract class AbstractClient implements Client {
             && MessageUtils.isTrue(outMessage.getContextualProperty("response.stream.auto.close"));
     }
     
-    protected void completeExchange(Object response, Exchange exchange, boolean proxy) {
+    protected void completeExchange(Exchange exchange, boolean proxy) {
         // higher level conduits such as FailoverTargetSelector need to
         // clear the request state but a fair number of response objects 
         // depend on InputStream being still open thus lower-level conduits
@@ -546,13 +555,17 @@ public abstract class AbstractClient implements Client {
         Exchange exchange = message.getExchange(); 
       
         Exception ex = message.getContent(Exception.class);
-        if (ex != null) {
+        if (ex != null
+            || PropertyUtils.isTrue(exchange.get(SERVICE_NOT_AVAIL_PROPERTY))
+                && PropertyUtils.isTrue(exchange.get(COMPLETE_IF_SERVICE_NOT_AVAIL_PROPERTY))) {
             getConfiguration().getConduitSelector().complete(exchange);
+        }
+        if (ex != null) {
             checkClientException(message, ex);
         }
-        checkClientException(message, message.getExchange().get(Exception.class));
+        checkClientException(message, exchange.get(Exception.class));
         
-        List<?> result = message.getExchange().get(List.class);
+        List<?> result = exchange.get(List.class);
         return result != null ? result.toArray() : null;
     }
     
@@ -736,13 +749,26 @@ public abstract class AbstractClient implements Client {
         }
         ProviderFactory pf = ClientProviderFactory.getInstance(cfg.getEndpoint());
         if (pf != null) {
+            Message m = null;
+            if (pf.isParamConverterContextsAvailable()) {
+                m = new MessageImpl();
+                m.put(Message.REQUESTOR_ROLE, Boolean.TRUE);
+                m.setExchange(new ExchangeImpl());
+                m.getExchange().setOutMessage(m);
+                m.getExchange().put(Endpoint.class, cfg.getEndpoint());
+            }
             Class<?> pClass = pValue.getClass();
-            
             @SuppressWarnings("unchecked")
             ParamConverter<Object> prov = 
-                (ParamConverter<Object>)pf.createParameterHandler(pClass, pClass, anns);
+                (ParamConverter<Object>)pf.createParameterHandler(pClass, pClass, anns, m);
             if (prov != null) {
-                return prov.toString(pValue);
+                try {
+                    return prov.toString(pValue);
+                } finally {
+                    if (m != null) {
+                        pf.clearThreadLocalProxies();
+                    }
+                }
             }
         }
         return pValue.toString();
@@ -905,7 +931,7 @@ public abstract class AbstractClient implements Client {
         m.put(Message.REQUESTOR_ROLE, Boolean.TRUE);
         m.put(Message.INBOUND_MESSAGE, Boolean.FALSE);
         
-        m.put(Message.HTTP_REQUEST_METHOD, httpMethod);
+        setRequestMethod(m, httpMethod);
         m.put(Message.PROTOCOL_HEADERS, headers);
         if (currentURI.isAbsolute() && currentURI.getScheme().startsWith(HTTP_SCHEME)) {
             m.put(Message.ENDPOINT_ADDRESS, currentURI.toString());
@@ -947,6 +973,19 @@ public abstract class AbstractClient implements Client {
         return m;
     }
     
+    private void setRequestMethod(Message m, String httpMethod) {
+        m.put(Message.HTTP_REQUEST_METHOD, httpMethod);
+        if (!KNOWN_METHODS.contains(httpMethod) && !m.containsKey("use.async.http.conduit")) {
+            // if the async conduit is loaded then let it handle this method without users 
+            // having to explicitly request it given that, without reflectively updating
+            // HTTPUrlConnection, it will not work without the async conduit anyway
+            m.put("use.async.http.conduit", true);
+        }
+        //TODO: consider setting "use.httpurlconnection.method.reflection" here too - 
+        // if the async conduit is not loaded then the only way for the custom HTTP verb 
+        // to be supported is to attempt to reflectively modify HTTPUrlConnection
+    }
+
     protected void setEmptyRequestPropertyIfNeeded(Message outMessage, Object body) {
         if (body == null) {
             outMessage.put("org.apache.cxf.empty.request", true);
@@ -1068,7 +1107,7 @@ public abstract class AbstractClient implements Client {
         
     }
     private static class ConnectionFaultInterceptor extends AbstractPhaseInterceptor<Message> {
-        public ConnectionFaultInterceptor() {
+        ConnectionFaultInterceptor() {
             super(Phase.PRE_STREAM);
         } 
 

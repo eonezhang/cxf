@@ -18,7 +18,9 @@
  */
 package org.apache.cxf.rs.security.oidc.rp;
 
+import java.io.ByteArrayInputStream;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 
 import javax.annotation.Priority;
 import javax.ws.rs.Priorities;
@@ -32,6 +34,7 @@ import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriBuilder;
 
+import org.apache.cxf.common.util.StringUtils;
 import org.apache.cxf.jaxrs.ext.MessageContext;
 import org.apache.cxf.jaxrs.impl.MetadataMap;
 import org.apache.cxf.jaxrs.utils.FormUtils;
@@ -50,7 +53,7 @@ public class OidcRpAuthenticationFilter implements ContainerRequestFilter {
     public void filter(ContainerRequestContext rc) {
         if (checkSecurityContext(rc)) {
             return;
-        } else {
+        } else if (redirectUri != null) {
             URI redirectAddress = null;
             if (redirectUri.startsWith("/")) {
                 String basePath = (String)mc.get("http.base.path");
@@ -65,6 +68,8 @@ public class OidcRpAuthenticationFilter implements ContainerRequestFilter {
                            .header(HttpHeaders.CACHE_CONTROL, "no-cache, no-store")
                            .header("Pragma", "no-cache") 
                            .build());
+        } else {
+            rc.abortWith(Response.status(401).build());
         }
     }
     protected boolean checkSecurityContext(ContainerRequestContext rc) {
@@ -85,16 +90,18 @@ public class OidcRpAuthenticationFilter implements ContainerRequestFilter {
         MultivaluedMap<String, String> requestState = new MetadataMap<String, String>();
         requestState.putAll(rc.getUriInfo().getQueryParameters(true));
         if (MediaType.APPLICATION_FORM_URLENCODED_TYPE.isCompatible(rc.getMediaType())) {
-            String body = FormUtils.readBody(rc.getEntityStream(), "UTF-8");
+            String body = FormUtils.readBody(rc.getEntityStream(), StandardCharsets.UTF_8.name());
             FormUtils.populateMapFromString(requestState, JAXRSUtils.getCurrentMessage(), body, 
-                                            "UTF-8", true);
+                                            StandardCharsets.UTF_8.name(), true);
+            rc.setEntityStream(new ByteArrayInputStream(StringUtils.toBytesUTF8(body)));
+            
         }
         return requestState;
     }
     public void setRedirectUri(String redirectUri) {
         this.redirectUri = redirectUri;
     }
-    public void setStateManager(ClientTokenContextManager stateManager) {
-        this.stateManager = stateManager;
+    public void setClientTokenContextManager(ClientTokenContextManager manager) {
+        this.stateManager = manager;
     }
 }

@@ -1026,6 +1026,8 @@ public class WebClient extends AbstractClient {
             } catch (Throwable t) {
                 cb.handleException(message, t);
                 return;
+            } finally {
+                completeExchange(message.getExchange(), false);
             }
         }
         if (cb.getResponseClass() == null || Response.class.equals(cb.getResponseClass())) {
@@ -1150,17 +1152,10 @@ public class WebClient extends AbstractClient {
                 ? (ProcessingException)ex : new ProcessingException(ex); 
         }
         
-        Response response = null;
-        Object entity = null;
         try {
-            response = handleResponse(m, responseClass, outGenericType);
-            entity = response.getEntity();
-            return response;
-        } catch (RuntimeException ex) {
-            entity = ex;
-            throw ex;
+            return handleResponse(m, responseClass, outGenericType);
         } finally {
-            completeExchange(entity, m.getExchange(), false);
+            completeExchange(m.getExchange(), false);
         }
     }
     
@@ -1296,7 +1291,7 @@ public class WebClient extends AbstractClient {
     }
     
     class ClientAsyncResponseInterceptor extends AbstractPhaseInterceptor<Message> {
-        public ClientAsyncResponseInterceptor() {
+        ClientAsyncResponseInterceptor() {
             super(Phase.UNMARSHAL);
         }
 

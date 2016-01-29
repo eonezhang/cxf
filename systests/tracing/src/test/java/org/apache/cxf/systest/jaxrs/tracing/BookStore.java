@@ -21,6 +21,7 @@ package org.apache.cxf.systest.jaxrs.tracing;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -29,13 +30,16 @@ import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
+import javax.ws.rs.container.AsyncResponse;
+import javax.ws.rs.container.Suspended;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import org.apache.cxf.systest.Book;
 import org.apache.cxf.tracing.Traceable;
 import org.apache.cxf.tracing.TracerContext;
-import org.apache.htrace.TraceScope;
+import org.apache.htrace.core.TraceScope;
 
 @Path("/bookstore/")
 public class BookStore {
@@ -52,6 +56,81 @@ public class BookStore {
                 new Book("Mastering Apache CXF", UUID.randomUUID().toString())
             );
         }
+    }
+    
+    @GET
+    @Path("/books/async")
+    @Produces(MediaType.APPLICATION_JSON)
+    public void getBooksAsync(@Suspended final AsyncResponse response) throws Exception {
+        tracer.continueSpan(new Traceable<Void>() {
+            @Override
+            public Void call(final TracerContext context) throws Exception {
+                executor.submit(
+                    tracer.wrap("Processing books", new Traceable<Void>() {
+                        @Override
+                        public Void call(final TracerContext context) throws Exception {
+                            // Simulate some running job 
+                            Thread.sleep(200);
+                            
+                            response.resume(
+                                Arrays.asList(
+                                    new Book("Apache CXF in Action", UUID.randomUUID().toString()),
+                                    new Book("Mastering Apache CXF", UUID.randomUUID().toString())
+                                )
+                            );
+                            
+                            return null;
+                        }
+                    }
+                ));
+                
+                return null;
+            }
+        });
+    }
+    
+    @GET
+    @Path("/books/async/notrace")
+    @Produces(MediaType.APPLICATION_JSON)
+    public void getBooksAsyncNoTrace(@Suspended final AsyncResponse response) throws Exception {
+        executor.submit(
+            new Callable<Void>() {
+                @Override
+                public Void call() throws Exception {
+                    // Simulate some running job 
+                    Thread.sleep(200);
+                    
+                    response.resume(
+                        Arrays.asList(
+                            new Book("Apache CXF in Action", UUID.randomUUID().toString()),
+                            new Book("Mastering Apache CXF", UUID.randomUUID().toString())
+                        )
+                    );
+                    
+                    return null;
+                }
+            }
+        );
+    }
+    
+    @GET
+    @Path("/books/pseudo-async")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Book> getBooksPseudoAsync() throws Exception {
+        return tracer.continueSpan(new Traceable<Collection<Book>>() {
+            @Override
+            public Collection<Book> call(final TracerContext context) throws Exception {
+                return tracer.wrap("Processing books", new Traceable<Collection<Book>>() {
+                    @Override
+                    public Collection<Book> call(final TracerContext context) throws Exception {
+                        return Arrays.asList(
+                            new Book("Apache CXF in Action", UUID.randomUUID().toString()),
+                            new Book("Mastering Apache CXF", UUID.randomUUID().toString())
+                        );
+                    }
+                }).call();
+            }
+        });
     }
     
     @GET

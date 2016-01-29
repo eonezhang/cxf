@@ -29,13 +29,14 @@ import javax.crypto.SecretKey;
 
 import org.apache.cxf.rs.security.oauth2.common.Client;
 import org.apache.cxf.rs.security.oauth2.common.ServerAccessToken;
+import org.apache.cxf.rs.security.oauth2.common.UserSubject;
 import org.apache.cxf.rs.security.oauth2.tokens.refresh.RefreshToken;
+import org.apache.cxf.rs.security.oauth2.utils.OAuthConstants;
 import org.apache.cxf.rs.security.oauth2.utils.crypto.ModelEncryptionSupport;
 import org.apache.cxf.rt.security.crypto.CryptoUtils;
 import org.apache.cxf.rt.security.crypto.KeyProperties;
 
-public class DefaultEncryptingOAuthDataProvider extends AbstractOAuthDataProvider 
-    implements ClientRegistrationProvider {
+public class DefaultEncryptingOAuthDataProvider extends AbstractOAuthDataProvider {
     protected SecretKey key;
     private Set<String> tokens = Collections.synchronizedSet(new HashSet<String>());
     private ConcurrentHashMap<String, String> refreshTokens = new ConcurrentHashMap<String, String>();
@@ -64,25 +65,61 @@ public class DefaultEncryptingOAuthDataProvider extends AbstractOAuthDataProvide
     public Client removeClient(String clientId) {
         Client client = getClient(clientId);
         clientsMap.remove(clientId);
+        removeClientTokens(client);
         return client;
     }
     @Override
-    public List<Client> getClients() {
+    public List<Client> getClients(UserSubject resourceOwner) {
         List<Client> clients = new ArrayList<Client>(clientsMap.size());
         for (String clientKey : clientsMap.keySet()) {
-            clients.add(getClient(clientKey));
+            Client c = getClient(clientKey);
+            if (resourceOwner == null 
+                || c.getResourceOwnerSubject() != null 
+                   && c.getResourceOwnerSubject().getLogin().equals(resourceOwner.getLogin())) {
+                clients.add(c);
+            }
         }
         return clients;
     }
+    @Override
+    public List<ServerAccessToken> getAccessTokens(Client c, UserSubject sub) {
+        List<ServerAccessToken> list = new ArrayList<ServerAccessToken>(tokens.size());
+        for (String tokenKey : tokens) {
+            ServerAccessToken token = getAccessToken(tokenKey);
+            if (isTokenMatched(token, c, sub)) {
+                list.add(token);
+            }
+        }
+        return list;
+    }
+    @Override
+    public List<RefreshToken> getRefreshTokens(Client c, UserSubject sub) {
+        List<RefreshToken> list = new ArrayList<RefreshToken>(refreshTokens.size());
+        for (String tokenKey : tokens) {
+            RefreshToken token = getRefreshToken(tokenKey);
+            if (isTokenMatched(token, c, sub)) {
+                list.add(token);
+            }
+        }
+        return list;
+    }
     
+    protected static boolean isTokenMatched(ServerAccessToken token, Client c, UserSubject sub) {
+        if (c == null || token.getClient().getClientId().equals(c.getClientId())) {
+            UserSubject tokenSub = token.getSubject();
+            if (sub == null || tokenSub != null && tokenSub.getLogin().equals(sub.getLogin())) {
+                return true;
+            }
+        }
+        return false;
+    }
     @Override
     public ServerAccessToken getAccessToken(String accessToken) throws OAuthServiceException {
-        return ModelEncryptionSupport.decryptAccessToken(this, accessToken, key);
-    }
-
-    @Override
-    public void removeAccessToken(ServerAccessToken accessToken) throws OAuthServiceException {
-        revokeAccessToken(accessToken.getTokenKey());
+        try {
+            return ModelEncryptionSupport.decryptAccessToken(this, accessToken, key);
+        } catch (SecurityException ex) {
+            throw new OAuthServiceException(OAuthConstants.ACCESS_DENIED, ex);
+        }
     }
 
     @Override
@@ -91,8 +128,10 @@ public class DefaultEncryptingOAuthDataProvider extends AbstractOAuthDataProvide
     }
 
     @Override
-    protected boolean revokeAccessToken(String accessTokenKey) {
-        return tokens.remove(accessTokenKey);
+    protected ServerAccessToken revokeAccessToken(String accessTokenKey) {
+        ServerAccessToken at = getAccessToken(accessTokenKey);
+        tokens.remove(accessTokenKey);
+        return at;
     }
     
     @Override
@@ -102,9 +141,14 @@ public class DefaultEncryptingOAuthDataProvider extends AbstractOAuthDataProvide
     }
 
     @Override
-    protected RefreshToken revokeRefreshToken(Client client, String refreshTokenKey) {
-        refreshTokens.remove(refreshTokenKey);
-        return ModelEncryptionSupport.decryptRefreshToken(this, refreshTokenKey, key);
+    protected RefreshToken revokeRefreshToken(String refreshTokenKey) {
+        RefreshToken rt = null;
+        if (refreshTokens.containsKey(refreshTokenKey)) {
+            rt = getRefreshToken(refreshTokenKey);
+            refreshTokens.remove(refreshTokenKey);
+        }
+        return rt;
+        
     }
 
     private void encryptAccessToken(ServerAccessToken token) {
@@ -113,4 +157,13 @@ public class DefaultEncryptingOAuthDataProvider extends AbstractOAuthDataProvide
         refreshTokens.put(token.getRefreshToken(), encryptedToken);
         token.setTokenKey(encryptedToken);
     }
+    @Override
+    protected RefreshToken getRefreshToken(String refreshTokenKey) {
+        try {
+            return ModelEncryptionSupport.decryptRefreshToken(this, refreshTokenKey, key);
+        } catch (SecurityException ex) {
+            throw new OAuthServiceException(OAuthConstants.ACCESS_DENIED, ex);
+        }
+    }
+    
 }

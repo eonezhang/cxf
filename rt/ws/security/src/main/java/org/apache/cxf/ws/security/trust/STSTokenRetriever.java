@@ -29,7 +29,7 @@ import org.w3c.dom.Element;
 import org.apache.cxf.common.logging.LogUtils;
 import org.apache.cxf.interceptor.Fault;
 import org.apache.cxf.message.Message;
-import org.apache.cxf.message.MessageUtils;
+import org.apache.cxf.rt.security.utils.SecurityUtils;
 import org.apache.cxf.ws.addressing.AddressingProperties;
 import org.apache.cxf.ws.security.SecurityConstants;
 import org.apache.cxf.ws.security.tokenstore.SecurityToken;
@@ -61,20 +61,21 @@ public final class STSTokenRetriever {
         }
 
         boolean cacheIssuedToken =
-            MessageUtils.getContextualBoolean(
+            SecurityUtils.getSecurityPropertyBoolean(SecurityConstants.CACHE_ISSUED_TOKEN_IN_ENDPOINT,
                                               message,
-                                              SecurityConstants.CACHE_ISSUED_TOKEN_IN_ENDPOINT,
                                               true)
                 && !isOneTimeUse(tok);
         if (cacheIssuedToken) {
             message.getExchange().getEndpoint().put(SecurityConstants.TOKEN, tok);
             message.getExchange().put(SecurityConstants.TOKEN, tok);
+            message.put(SecurityConstants.TOKEN_ELEMENT, tok.getToken());
             message.getExchange().put(SecurityConstants.TOKEN_ID, tok.getId());
             message.getExchange().getEndpoint().put(SecurityConstants.TOKEN_ID,
                                                           tok.getId());
         } else {
             message.put(SecurityConstants.TOKEN, tok);
             message.put(SecurityConstants.TOKEN_ID, tok.getId());
+            message.put(SecurityConstants.TOKEN_ELEMENT, tok.getToken());
         }
         // ?
         TokenStoreUtils.getTokenStore(message).add(tok);
@@ -84,9 +85,8 @@ public final class STSTokenRetriever {
 
     private static SecurityToken retrieveCachedToken(Message message) {
         boolean cacheIssuedToken =
-            MessageUtils.getContextualBoolean(
+            SecurityUtils.getSecurityPropertyBoolean(SecurityConstants.CACHE_ISSUED_TOKEN_IN_ENDPOINT,
                                               message,
-                                              SecurityConstants.CACHE_ISSUED_TOKEN_IN_ENDPOINT,
                                               true);
         SecurityToken tok = null;
         if (cacheIssuedToken) {
@@ -122,23 +122,30 @@ public final class STSTokenRetriever {
             try {
                 // Transpose ActAs/OnBehalfOf info from original request to the STS client.
                 Object token =
-                    message.getContextualProperty(SecurityConstants.STS_TOKEN_ACT_AS);
+                    SecurityUtils.getSecurityPropertyValue(SecurityConstants.STS_TOKEN_ACT_AS, message);
                 if (token != null) {
                     client.setActAs(token);
                 }
                 token =
-                    message.getContextualProperty(SecurityConstants.STS_TOKEN_ON_BEHALF_OF);
+                    SecurityUtils.getSecurityPropertyValue(SecurityConstants.STS_TOKEN_ON_BEHALF_OF, message);
                 if (token != null) {
                     client.setOnBehalfOf(token);
                 }
                 Map<String, Object> ctx = client.getRequestContext();
                 mapSecurityProps(message, ctx);
 
-                Object o = message.getContextualProperty(SecurityConstants.STS_APPLIES_TO);
+                Object o = SecurityUtils.getSecurityPropertyValue(SecurityConstants.STS_APPLIES_TO, message);
                 String appliesTo = o == null ? null : o.toString();
-                appliesTo = appliesTo == null
-                    ? message.getContextualProperty(Message.ENDPOINT_ADDRESS).toString()
-                    : appliesTo;
+                if (appliesTo == null) {
+                    String endpointAddress = 
+                        message.getContextualProperty(Message.ENDPOINT_ADDRESS).toString();
+                    // Strip out any query parameters if they exist
+                    int query = endpointAddress.indexOf('?');
+                    if (query > 0) {
+                        endpointAddress = endpointAddress.substring(0, query);
+                    }
+                    appliesTo = endpointAddress;
+                }
                 boolean enableAppliesTo = client.isEnableAppliesTo();
 
                 client.setMessage(message);
@@ -150,7 +157,10 @@ public final class STSTokenRetriever {
                                      message, onBehalfOfToken, actAsToken, appliesTo,
                                      enableAppliesTo
                     );
-                if (secToken == null) {
+                if (secToken != null) {
+                    // Check to see whether the delegated token needs to be renewed
+                    secToken = renewToken(message, secToken, params);
+                } else {
                     secToken = getTokenFromSTS(message, client, maps, appliesTo, params);
                 }
                 storeDelegationTokens(
@@ -175,8 +185,8 @@ public final class STSTokenRetriever {
                                      SecurityToken tok,
                                      TokenRequestParams params) {
         String imminentExpiryValue =
-            (String)message
-                .getContextualProperty(SecurityConstants.STS_TOKEN_IMMINENT_EXPIRY_VALUE);
+            (String)SecurityUtils.getSecurityPropertyValue(SecurityConstants.STS_TOKEN_IMMINENT_EXPIRY_VALUE, 
+                                                           message);
         long imminentExpiry = 10L;
         if (imminentExpiryValue != null) {
             imminentExpiry = Long.parseLong(imminentExpiryValue);
@@ -227,10 +237,8 @@ public final class STSTokenRetriever {
             } catch (RuntimeException ex) {
                 LOG.log(Level.WARNING, "Error renewing a token", ex);
                 boolean issueAfterFailedRenew =
-                    MessageUtils
-                        .getContextualBoolean(
-                                              message,
-                                              SecurityConstants.STS_ISSUE_AFTER_FAILED_RENEW, true);
+                    SecurityUtils.getSecurityPropertyBoolean(
+                                              SecurityConstants.STS_ISSUE_AFTER_FAILED_RENEW, message, true);
                 if (issueAfterFailedRenew) {
                     // Perhaps the STS does not support renewing, so try to issue a new token
                     return issueToken(message, params);
@@ -240,10 +248,8 @@ public final class STSTokenRetriever {
             } catch (Exception ex) {
                 LOG.log(Level.WARNING, "Error renewing a token", ex);
                 boolean issueAfterFailedRenew =
-                    MessageUtils
-                        .getContextualBoolean(
-                                              message,
-                                              SecurityConstants.STS_ISSUE_AFTER_FAILED_RENEW, true);
+                    SecurityUtils.getSecurityPropertyBoolean(
+                                              SecurityConstants.STS_ISSUE_AFTER_FAILED_RENEW, message, true);
                 if (issueAfterFailedRenew) {
                     // Perhaps the STS does not support renewing, so try to issue a new token
                     return issueToken(message, params);
