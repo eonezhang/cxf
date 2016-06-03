@@ -36,6 +36,7 @@ import com.fasterxml.jackson.jaxrs.json.JacksonJsonProvider;
 import org.apache.cxf.Bus;
 import org.apache.cxf.bus.spring.SpringBusFactory;
 import org.apache.cxf.jaxrs.client.JAXRSClientFactoryBean;
+import org.apache.cxf.rs.security.jose.common.JoseConstants;
 import org.apache.cxf.rs.security.jose.jaxrs.JweClientResponseFilter;
 import org.apache.cxf.rs.security.jose.jaxrs.JweWriterInterceptor;
 import org.apache.cxf.rs.security.jose.jaxrs.JwsJsonClientResponseFilter;
@@ -78,6 +79,17 @@ public class JAXRSJwsJsonTest extends AbstractBusClientServerTestBase {
         assertEquals("book", text);
     }
     @Test
+    public void testJwsJsonPlainTextHmacUnencoded() throws Exception {
+        String address = "https://localhost:" + PORT + "/jwsjsonhmac";
+        BookStore bs = createBookStore(address, 
+                                       Collections.singletonMap(JoseConstants.RSSEC_SIGNATURE_PROPS, 
+                                           "org/apache/cxf/systest/jaxrs/security/secret.jwk.properties"),
+                                       null,
+                                       false);
+        String text = bs.echoText("book");
+        assertEquals("book", text);
+    }
+    @Test
     public void testJwsJsonBookBeanHmac() throws Exception {
         String address = "https://localhost:" + PORT + "/jwsjsonhmac";
         BookStore bs = createBookStore(address, 
@@ -98,8 +110,8 @@ public class JAXRSJwsJsonTest extends AbstractBusClientServerTestBase {
                                                new JweClientResponseFilter());
         String jwkStoreProperty = "org/apache/cxf/systest/jaxrs/security/secret.jwk.properties";
         Map<String, Object> props = new HashMap<String, Object>();
-        props.put("rs.security.signature.list.properties", jwkStoreProperty);
-        props.put("rs.security.encryption.properties", jwkStoreProperty);
+        props.put(JoseConstants.RSSEC_SIGNATURE_PROPS, jwkStoreProperty);
+        props.put(JoseConstants.RSSEC_ENCRYPTION_PROPS, jwkStoreProperty);
         BookStore bs = createBookStore(address, 
                                        props,
                                        extraProviders);
@@ -114,7 +126,11 @@ public class JAXRSJwsJsonTest extends AbstractBusClientServerTestBase {
         List<String> properties = new ArrayList<String>();
         properties.add("org/apache/cxf/systest/jaxrs/security/secret.jwk.properties");
         properties.add("org/apache/cxf/systest/jaxrs/security/secret.jwk.hmac.properties");
-        BookStore bs = createBookStore(address, properties, null);
+        Map<String, Object> map = new HashMap<String, Object>();
+        map.put(JoseConstants.RSSEC_SIGNATURE_OUT_PROPS, properties);
+        map.put(JoseConstants.RSSEC_SIGNATURE_IN_PROPS, 
+                "org/apache/cxf/systest/jaxrs/security/secret.jwk.hmac.properties");
+        BookStore bs = createBookStore(address, map, null);
         Book book = bs.echoBook(new Book("book", 123L));
         assertEquals("book", book.getName());
         assertEquals(123L, book.getId());
@@ -125,7 +141,11 @@ public class JAXRSJwsJsonTest extends AbstractBusClientServerTestBase {
         String address = "https://localhost:" + PORT + "/jwsjsonhmac2";
         List<String> properties = new ArrayList<String>();
         properties.add("org/apache/cxf/systest/jaxrs/security/secret.jwk.hmac2.properties");
-        BookStore bs = createBookStore(address, properties, null);
+        Map<String, Object> map = new HashMap<String, Object>();
+        map.put(JoseConstants.RSSEC_SIGNATURE_OUT_PROPS, properties);
+        map.put(JoseConstants.RSSEC_SIGNATURE_IN_PROPS, 
+                "org/apache/cxf/systest/jaxrs/security/secret.jwk.properties");
+        BookStore bs = createBookStore(address, map, null);
         Book book = bs.echoBook2(new Book("book", 123L));
         assertEquals("book", book.getName());
         assertEquals(123L, book.getId());
@@ -160,12 +180,22 @@ public class JAXRSJwsJsonTest extends AbstractBusClientServerTestBase {
     private BookStore createBookStore(String address, Object properties,
                                       List<?> extraProviders) throws Exception {
         return createBookStore(address, 
-                               Collections.singletonMap("rs.security.signature.list.properties", properties),
-                               extraProviders);
+                               Collections.singletonMap(JoseConstants.RSSEC_SIGNATURE_PROPS, properties),
+                               extraProviders,
+                               true);
     }
     private BookStore createBookStore(String address, 
                                       Map<String, Object> mapProperties,
                                       List<?> extraProviders) throws Exception {
+        return createBookStore(address, 
+                               mapProperties,
+                               extraProviders,
+                               true);
+    }
+    private BookStore createBookStore(String address, 
+                                      Map<String, Object> mapProperties,
+                                      List<?> extraProviders,
+                                      boolean encodePayload) throws Exception {
         JAXRSClientFactoryBean bean = new JAXRSClientFactoryBean();
         SpringBusFactory bf = new SpringBusFactory();
         URL busFile = JAXRSJwsJsonTest.class.getResource("client.xml");
@@ -176,6 +206,7 @@ public class JAXRSJwsJsonTest extends AbstractBusClientServerTestBase {
         List<Object> providers = new LinkedList<Object>();
         JwsJsonWriterInterceptor writer = new JwsJsonWriterInterceptor();
         writer.setUseJwsJsonOutputStream(true);
+        writer.setEncodePayload(encodePayload);
         providers.add(writer);
         providers.add(new JwsJsonClientResponseFilter());
         if (extraProviders != null) {

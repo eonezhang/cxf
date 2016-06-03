@@ -79,6 +79,11 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>org.apache.cxf</groupId>
+            <artifactId>cxf-rt-rs-security-sso-oidc</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
          <groupId>org.bouncycastle</groupId>
          <artifactId>bcprov-ext-jdk15on</artifactId>
          <version>${cxf.bcprov.version}</version>
@@ -121,15 +126,16 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>org.apache.cxf</groupId>
+            <artifactId>cxf-testutils</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+            <classifier>tests</classifier>
+        </dependency>
+        <dependency>
             <groupId>javax.annotation</groupId>
             <artifactId>jsr250-api</artifactId>
             <version>1.0</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>net.oauth.core</groupId>
-            <artifactId>oauth-consumer</artifactId>
-            <version>${oauth.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -217,11 +223,4 @@
             </dependencies>
         </profile>
     </profiles>
-    <repositories>
-        <repository>
-            <id>oauth</id>
-            <name>OAuth Repository</name>
-            <url>http://oauth.googlecode.com/svn/code/maven/</url>
-        </repository>
-    </repositories>
 </project>

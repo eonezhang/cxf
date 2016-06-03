@@ -19,6 +19,7 @@
 package org.apache.cxf.sts.operation;
 
 import java.security.Principal;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -31,9 +32,9 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
 import org.apache.cxf.helpers.DOMUtils;
-import org.apache.cxf.jaxws.context.WebServiceContextImpl;
 import org.apache.cxf.jaxws.context.WrappedMessageContext;
 import org.apache.cxf.message.MessageImpl;
+import org.apache.cxf.rs.security.jose.jwa.SignatureAlgorithm;
 import org.apache.cxf.rs.security.jose.jws.JwsJwtCompactConsumer;
 import org.apache.cxf.rs.security.jose.jwt.JwtConstants;
 import org.apache.cxf.rs.security.jose.jwt.JwtToken;
@@ -55,6 +56,7 @@ import org.apache.cxf.ws.security.sts.provider.model.RequestedSecurityTokenType;
 import org.apache.cxf.ws.security.tokenstore.TokenStore;
 import org.apache.wss4j.common.crypto.Crypto;
 import org.apache.wss4j.common.crypto.CryptoFactory;
+import org.apache.wss4j.common.crypto.CryptoType;
 import org.apache.wss4j.common.principal.CustomTokenPrincipal;
 import org.apache.wss4j.dom.WSConstants;
 import org.junit.Assert;
@@ -114,15 +116,15 @@ public class IssueJWTUnitTest extends org.junit.Assert {
         // Mock up message context
         MessageImpl msg = new MessageImpl();
         WrappedMessageContext msgCtx = new WrappedMessageContext(msg);
+        Principal principal = new CustomTokenPrincipal("alice");
         msgCtx.put(
             SecurityContext.class.getName(), 
-            createSecurityContext(new CustomTokenPrincipal("alice"))
+            createSecurityContext(principal)
         );
-        WebServiceContextImpl webServiceContext = new WebServiceContextImpl(msgCtx);
         
         // Issue a token
         RequestSecurityTokenResponseCollectionType response = 
-            issueOperation.issue(request, webServiceContext);
+            issueOperation.issue(request, principal, msgCtx);
         List<RequestSecurityTokenResponseType> securityTokenResponse = 
             response.getRequestSecurityTokenResponse();
         assertTrue(!securityTokenResponse.isEmpty());
@@ -145,6 +147,13 @@ public class IssueJWTUnitTest extends org.junit.Assert {
         JwsJwtCompactConsumer jwtConsumer = new JwsJwtCompactConsumer(token.getTextContent());
         JwtToken jwt = jwtConsumer.getJwtToken();
         Assert.assertEquals("alice", jwt.getClaim(JwtConstants.CLAIM_SUBJECT));
+        
+        CryptoType cryptoType = new CryptoType(CryptoType.TYPE.ALIAS);
+        cryptoType.setAlias(stsProperties.getSignatureUsername());
+        X509Certificate[] certs = crypto.getX509Certificates(cryptoType);
+        assertNotNull(certs);
+        
+        assertTrue(jwtConsumer.verifySignatureWith(certs[0], SignatureAlgorithm.RS256));
     }
     
     /*

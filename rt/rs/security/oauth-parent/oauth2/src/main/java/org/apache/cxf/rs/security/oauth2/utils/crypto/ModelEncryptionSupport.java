@@ -245,7 +245,7 @@ public final class ModelEncryptionSupport {
             String[] allPermParts = parts[9].split("\\.");
             for (int i = 0; i + 4 < allPermParts.length; i = i + 5) {
                 OAuthPermission perm = new OAuthPermission(allPermParts[i], allPermParts[i + 1]);
-                perm.setDefault(Boolean.valueOf(allPermParts[i + 2]));
+                perm.setDefaultPermission(Boolean.valueOf(allPermParts[i + 2]));
                 perm.setHttpVerbs(parseSimpleList(allPermParts[i + 3]));
                 perm.setUris(parseSimpleList(allPermParts[i + 4]));
                 perms.add(perm);
@@ -256,7 +256,9 @@ public final class ModelEncryptionSupport {
         newToken.setClientCodeVerifier(parts[10]);
         //UserSubject:
         newToken.setSubject(recreateUserSubject(parts[11]));
-                
+        
+        newToken.setExtraProperties(parseSimpleMap(parts[12]));
+        
         return newToken;
     }
     
@@ -307,7 +309,7 @@ public final class ModelEncryptionSupport {
                 state.append(tokenizeString(p.getDescription()));
                 state.append(".");
                 // 9.3
-                state.append(p.isDefault());
+                state.append(p.isDefaultPermission());
                 state.append(".");
                 // 9.4
                 state.append(p.getHttpVerbs().toString());
@@ -322,7 +324,10 @@ public final class ModelEncryptionSupport {
         state.append(SEP);
         // 11: user subject
         tokenizeUserSubject(state, token.getSubject());
-        
+        // 13: extra properties
+        state.append(SEP);
+        // {key=value, key=value}
+        state.append(token.getExtraProperties().toString());
         return state.toString();
     }
     
@@ -402,6 +407,7 @@ public final class ModelEncryptionSupport {
         grant.setClientCodeChallenge(getStringPart(parts[6]));
         grant.setApprovedScopes(parseSimpleList(parts[7]));
         grant.setSubject(recreateUserSubject(parts[8]));
+        grant.setExtraProperties(parseSimpleMap(parts[9]));
         return grant; 
     }
     private static String tokenizeCodeGrant(ServerAuthorizationCodeGrant grant) {
@@ -432,7 +438,10 @@ public final class ModelEncryptionSupport {
         state.append(SEP);
         // 8: subject
         tokenizeUserSubject(state, grant.getSubject());
-        
+        // 9: extra properties
+        state.append(SEP);
+        // {key=value, key=value}
+        state.append(grant.getExtraProperties().toString());
         return state.toString();
     }
     
@@ -453,7 +462,7 @@ public final class ModelEncryptionSupport {
         }
     }
     
-    private static Map<String, String> parseSimpleMap(String mapStr) {
+    public static Map<String, String> parseSimpleMap(String mapStr) {
         Map<String, String> props = new HashMap<String, String>();
         List<String> entries = parseSimpleList(mapStr);
         for (String entry : entries) {

@@ -24,6 +24,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.logging.Level;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
@@ -37,11 +38,11 @@ import org.apache.cxf.common.util.StringUtils;
 import org.apache.cxf.jaxrs.utils.ExceptionUtils;
 import org.apache.cxf.rs.security.oauth2.common.Client;
 import org.apache.cxf.rs.security.oauth2.common.OAuthAuthorizationData;
-import org.apache.cxf.rs.security.oauth2.common.OAuthError;
 import org.apache.cxf.rs.security.oauth2.common.OAuthPermission;
 import org.apache.cxf.rs.security.oauth2.common.OAuthRedirectionState;
 import org.apache.cxf.rs.security.oauth2.common.ServerAccessToken;
 import org.apache.cxf.rs.security.oauth2.common.UserSubject;
+import org.apache.cxf.rs.security.oauth2.provider.AuthorizationRequestFilter;
 import org.apache.cxf.rs.security.oauth2.provider.OAuthServiceException;
 import org.apache.cxf.rs.security.oauth2.provider.ResourceOwnerNameProvider;
 import org.apache.cxf.rs.security.oauth2.provider.SessionAuthenticityTokenProvider;
@@ -55,6 +56,7 @@ import org.apache.cxf.security.SecurityContext;
  * The Base Redirection-Based Grant Service
  */
 public abstract class RedirectionBasedGrantService extends AbstractOAuthService {
+    private static final String AUTHORIZATION_REQUEST_PARAMETERS = "authorization.request.parameters";
     private Set<String> supportedResponseTypes;
     private String supportedGrantType;
     private boolean useAllClientScopes;
@@ -66,6 +68,8 @@ public abstract class RedirectionBasedGrantService extends AbstractOAuthService 
     private int maxDefaultSessionInterval;
     private boolean matchRedirectUriWithApplicationUri;
     private boolean hidePreauthorizedScopesInForm;
+    private AuthorizationRequestFilter authorizationFilter;
+    private List<String> scopesRequiringNoConsent;
     
     protected RedirectionBasedGrantService(String supportedResponseType,
                                            String supportedGrantType) {
@@ -118,59 +122,67 @@ public abstract class RedirectionBasedGrantService extends AbstractOAuthService 
     protected Response startAuthorization(MultivaluedMap<String, String> params) {
         // Make sure the end user has authenticated, check if HTTPS is used
         SecurityContext sc = getAndValidateSecurityContext(params);
-        // Create a UserSubject representing the end user 
-        UserSubject userSubject = createUserSubject(sc);
         Client client = getClient(params);
-        return startAuthorization(params, userSubject, client);
-    }
+        // Create a UserSubject representing the end user 
+        UserSubject userSubject = createUserSubject(sc, params);
         
-    protected Response startAuthorization(MultivaluedMap<String, String> params, 
-                                          UserSubject userSubject,
-                                          Client client) {    
-        
+        if (authorizationFilter != null) {
+            params = authorizationFilter.process(params, userSubject, client);
+        }
         // Validate the provided request URI, if any, against the ones Client provided
         // during the registration
-        String redirectUri = validateRedirectUri(client, params.getFirst(OAuthConstants.REDIRECT_URI)); 
+        String redirectUri = validateRedirectUri(client, params.getFirst(OAuthConstants.REDIRECT_URI));
+        
+        return startAuthorization(params, userSubject, client, redirectUri);
+    }
+    
+    protected Response startAuthorization(MultivaluedMap<String, String> params, 
+                                          UserSubject userSubject,
+                                          Client client,
+                                          String redirectUri) {    
         
         // Enforce the client confidentiality requirements
         if (!OAuthUtils.isGrantSupportedForClient(client, canSupportPublicClient(client), supportedGrantType)) {
+            LOG.fine("The grant type is not supported");
             return createErrorResponse(params, redirectUri, OAuthConstants.UNAUTHORIZED_CLIENT);
         }
         
         // Check response_type
         String responseType = params.getFirst(OAuthConstants.RESPONSE_TYPE);
-        if (responseType == null || !supportedResponseTypes.contains(responseType)) {
+        if (responseType == null || !getSupportedResponseTypes().contains(responseType)) {
+            LOG.fine("The response type is null or not supported");
             return createErrorResponse(params, redirectUri, OAuthConstants.UNSUPPORTED_RESPONSE_TYPE);
         }
         // Get the requested scopes
         String providedScope = params.getFirst(OAuthConstants.SCOPE);
         List<String> requestedScope = null;
+        List<OAuthPermission> requestedPermissions = null;
         try {
             requestedScope = OAuthUtils.getRequestedScopes(client, 
                                                            providedScope,
                                                            useAllClientScopes,
                                                            partialMatchScopeValidation);
-        } catch (OAuthServiceException ex) {
-            return createErrorResponse(params, redirectUri, OAuthConstants.INVALID_SCOPE);
-        }
-        // Convert the requested scopes to OAuthPermission instances
-        List<OAuthPermission> requestedPermissions = null;
-        try {
             requestedPermissions = getDataProvider().convertScopeToPermissions(client, requestedScope);
         } catch (OAuthServiceException ex) {
+            LOG.log(Level.FINE, "Error processing scopes", ex);
             return createErrorResponse(params, redirectUri, OAuthConstants.INVALID_SCOPE);
         }
+        
         // Validate the audience
         String clientAudience = params.getFirst(OAuthConstants.CLIENT_AUDIENCE);
         // Right now if the audience parameter is set it is expected to be contained
         // in the list of Client audiences set at the Client registration time.
         if (!OAuthUtils.validateAudience(clientAudience, client.getRegisteredAudiences())) {
-            throw new OAuthServiceException(new OAuthError(OAuthConstants.INVALID_REQUEST));
+            LOG.fine("Error validating audience parameter");
+            return createErrorResponse(params, redirectUri, OAuthConstants.INVALID_REQUEST);
         }
     
         // Request a new grant only if no pre-authorized token is available
-        ServerAccessToken preAuthorizedToken = getDataProvider().getPreauthorizedToken(
-            client, requestedScope, userSubject, supportedGrantType);
+        ServerAccessToken preAuthorizedToken = null;
+        if (canAccessTokenBeReturned(responseType)) {
+            preAuthorizedToken = getDataProvider().getPreauthorizedToken(client, requestedScope, userSubject, 
+                                                                         supportedGrantType);
+        }
         
         List<OAuthPermission> alreadyAuthorizedPerms = null;
         boolean preAuthorizationComplete = false;
@@ -182,36 +194,52 @@ public abstract class RedirectionBasedGrantService extends AbstractOAuthService 
                 preAuthorizedToken = null;
             }
         }
-        final boolean authorizationCanBeSkipped = preAuthorizationComplete 
-            || canAuthorizationBeSkipped(client, userSubject, requestedScope, requestedPermissions);
         
-        // Populate the authorization challenge data 
-        OAuthAuthorizationData data = 
-            createAuthorizationData(client, params, redirectUri, userSubject,  
-                                    requestedPermissions, 
-                                    alreadyAuthorizedPerms, 
-                                    authorizationCanBeSkipped);
-        
-        if (authorizationCanBeSkipped) {
-            List<OAuthPermission> approvedScopes = 
-                preAuthorizationComplete ? preAuthorizedToken.getScopes() : requestedPermissions; 
-            return createGrant(data,
-                               client, 
-                               requestedScope,
-                               OAuthUtils.convertPermissionsToScopeList(approvedScopes),
-                               userSubject,
-                               preAuthorizedToken);
+        Response finalResponse = null;
+        try {
+            final boolean authorizationCanBeSkipped = preAuthorizationComplete 
+                || canAuthorizationBeSkipped(params, client, userSubject, requestedScope, requestedPermissions);
+            
+            // Populate the authorization challenge data 
+            OAuthAuthorizationData data = createAuthorizationData(client, params, redirectUri, userSubject,  
+                                        requestedPermissions, 
+                                        alreadyAuthorizedPerms, 
+                                        authorizationCanBeSkipped);
+            
+            if (authorizationCanBeSkipped) {
+                getMessageContext().put(AUTHORIZATION_REQUEST_PARAMETERS, params);
+                List<OAuthPermission> approvedScopes = 
+                    preAuthorizationComplete ? preAuthorizedToken.getScopes() : requestedPermissions; 
+                finalResponse = createGrant(data,
+                                            client, 
+                                            requestedScope,
+                                            OAuthUtils.convertPermissionsToScopeList(approvedScopes),
+                                            userSubject,
+                                            preAuthorizedToken);
+            } else {
+                finalResponse = Response.ok(data).build();
+            }
+        } catch (OAuthServiceException ex) {
+            finalResponse = createErrorResponse(params, redirectUri, ex.getError().getError());
         }
         
-        return Response.ok(data).build();
+        return finalResponse;
         
     }
+    //CHECKSTYLE:OFF
     
-    protected boolean canAuthorizationBeSkipped(Client client, 
+    public Set<String> getSupportedResponseTypes() {
+        return supportedResponseTypes;
+    }
+    protected boolean canAuthorizationBeSkipped(MultivaluedMap<String, String> params,
+                                                Client client, 
                                                 UserSubject userSubject,
                                                 List<String> requestedScope, 
                                                 List<OAuthPermission> permissions) {
-        return false;
+        return scopesRequiringNoConsent != null 
+               && requestedScope != null
+               && requestedScope.size() == scopesRequiringNoConsent.size()
+               && requestedScope.containsAll(scopesRequiringNoConsent);
     }
 
     /**
@@ -262,31 +290,40 @@ public abstract class RedirectionBasedGrantService extends AbstractOAuthService 
         return secData;
     }
     protected OAuthRedirectionState recreateRedirectionStateFromSession(
-        UserSubject subject, MultivaluedMap<String, String> params, String sessionToken) {
-        OAuthRedirectionState state = null; 
+        UserSubject subject, String sessionToken) {
         if (sessionAuthenticityTokenProvider != null) {
-            state = sessionAuthenticityTokenProvider.getSessionState(super.getMessageContext(), 
+            return sessionAuthenticityTokenProvider.getSessionState(super.getMessageContext(), 
                                                                      sessionToken,
                                                                      subject);
+        } else {
+            return null;
         }
-        if (state == null) {
-            state = new OAuthRedirectionState();
-            state.setClientId(params.getFirst(OAuthConstants.CLIENT_ID));
-            state.setRedirectUri(params.getFirst(OAuthConstants.REDIRECT_URI));
-            state.setAudience(params.getFirst(OAuthConstants.CLIENT_AUDIENCE));
-            // or if no audience parameter is available, set the list of client
-            // audiences for the users to see ?
-            state.setProposedScope(params.getFirst(OAuthConstants.SCOPE));
-            state.setState(params.getFirst(OAuthConstants.STATE));
-            state.setNonce(params.getFirst(OAuthConstants.NONCE));
-            state.setResponseType(params.getFirst(OAuthConstants.RESPONSE_TYPE));
-        }
-        return state;
     }
     
+    
+    protected OAuthRedirectionState recreateRedirectionStateFromParams(MultivaluedMap<String, String> params) {
+        OAuthRedirectionState state = new OAuthRedirectionState();
+        state.setClientId(params.getFirst(OAuthConstants.CLIENT_ID));
+        state.setRedirectUri(params.getFirst(OAuthConstants.REDIRECT_URI));
+        state.setAudience(params.getFirst(OAuthConstants.CLIENT_AUDIENCE));
+        state.setProposedScope(params.getFirst(OAuthConstants.SCOPE));
+        state.setState(params.getFirst(OAuthConstants.STATE));
+        state.setNonce(params.getFirst(OAuthConstants.NONCE));
+        state.setResponseType(params.getFirst(OAuthConstants.RESPONSE_TYPE));
+        return state;
+    }
     protected void personalizeData(OAuthAuthorizationData data, UserSubject userSubject) {
         if (resourceOwnerNameProvider != null) {
             data.setEndUserName(resourceOwnerNameProvider.getName(userSubject));
+        }
+    }
+    
+    protected List<String> getApprovedScope(List<String> requestedScope, List<String> approvedScope) {
+        if (StringUtils.isEmpty(approvedScope)) {
+            // no down-scoping done by a user, all of the requested scopes have been authorized
+            return requestedScope;
+        } else {
+            return approvedScope;
         }
     }
     
@@ -296,7 +333,8 @@ public abstract class RedirectionBasedGrantService extends AbstractOAuthService 
     protected Response completeAuthorization(MultivaluedMap<String, String> params) {
         // Make sure the end user has authenticated, check if HTTPS is used
         SecurityContext securityContext = getAndValidateSecurityContext(params);
-        UserSubject userSubject = createUserSubject(securityContext);
+        
+        UserSubject userSubject = createUserSubject(securityContext, params);
         
         // Make sure the session is valid
         String sessionTokenParamName = params.getFirst(OAuthConstants.SESSION_AUTHENTICITY_TOKEN_PARAM_NAME);
@@ -308,8 +346,11 @@ public abstract class RedirectionBasedGrantService extends AbstractOAuthService 
             throw ExceptionUtils.toBadRequestException(null, null);     
         }
         
-        OAuthRedirectionState state = 
-            recreateRedirectionStateFromSession(userSubject, params, sessionToken);
+        OAuthRedirectionState state = recreateRedirectionStateFromSession(userSubject, sessionToken);
+        if (state == null) {
+            state = recreateRedirectionStateFromParams(params); 
+        }
+        
         Client client = getClient(state.getClientId());
         String redirectUri = validateRedirectUri(client, state.getRedirectUri());
         
@@ -336,7 +377,7 @@ public abstract class RedirectionBasedGrantService extends AbstractOAuthService 
                                          partialMatchScopeValidation)) {
             return createErrorResponse(params, redirectUri, OAuthConstants.INVALID_SCOPE);
         }
-        
+        getMessageContext().put(AUTHORIZATION_REQUEST_PARAMETERS, params);
         // Request a new grant
         return createGrant(state,
                            client, 
@@ -355,10 +396,12 @@ public abstract class RedirectionBasedGrantService extends AbstractOAuthService 
         this.subjectCreator = creator;
     }
     
-    protected UserSubject createUserSubject(SecurityContext securityContext) {
+    protected UserSubject createUserSubject(SecurityContext securityContext, 
+                                            MultivaluedMap<String, String> params) {
         UserSubject subject = null;
         if (subjectCreator != null) {
-            subject = subjectCreator.createUserSubject(getMessageContext());
+            subject = subjectCreator.createUserSubject(getMessageContext(),
+                                                       params);
             if (subject != null) {
                 return subject; 
             }
@@ -371,6 +414,11 @@ public abstract class RedirectionBasedGrantService extends AbstractOAuthService 
                                            String error) {
         return createErrorResponse(params.getFirst(OAuthConstants.STATE), redirectUri, error);
     }
+    
+    protected boolean canAccessTokenBeReturned(String responseType) {
+        return true;
+    }
+    
     protected abstract Response createErrorResponse(String state,
                                                     String redirectUri,
                                                     String error);
@@ -510,5 +558,11 @@ public abstract class RedirectionBasedGrantService extends AbstractOAuthService 
     }
     public void setHidePreauthorizedScopesInForm(boolean hidePreauthorizedScopesInForm) {
         this.hidePreauthorizedScopesInForm = hidePreauthorizedScopesInForm;
+    }
+    public void setAuthorizationFilter(AuthorizationRequestFilter authorizationFilter) {
+        this.authorizationFilter = authorizationFilter;
+    }
+    public void setScopesRequiringNoConsent(List<String> scopesRequiringNoConsent) {
+        this.scopesRequiringNoConsent = scopesRequiringNoConsent;
     }
 }

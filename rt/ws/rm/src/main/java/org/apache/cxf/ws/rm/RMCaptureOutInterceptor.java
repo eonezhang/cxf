@@ -19,8 +19,8 @@
 
 package org.apache.cxf.ws.rm;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -35,10 +35,12 @@ import org.apache.cxf.binding.Binding;
 import org.apache.cxf.binding.soap.interceptor.SoapOutInterceptor;
 import org.apache.cxf.common.logging.LogUtils;
 import org.apache.cxf.endpoint.Endpoint;
+import org.apache.cxf.helpers.IOUtils;
 import org.apache.cxf.interceptor.AbstractOutDatabindingInterceptor;
 import org.apache.cxf.interceptor.AttachmentOutInterceptor;
 import org.apache.cxf.interceptor.Fault;
 import org.apache.cxf.interceptor.LoggingOutInterceptor;
+import org.apache.cxf.io.CachedOutputStream;
 import org.apache.cxf.message.Exchange;
 import org.apache.cxf.message.ExchangeImpl;
 import org.apache.cxf.message.FaultMode;
@@ -54,6 +56,7 @@ import org.apache.cxf.service.model.OperationInfo;
 import org.apache.cxf.ws.addressing.AddressingProperties;
 import org.apache.cxf.ws.addressing.AttributedURIType;
 import org.apache.cxf.ws.addressing.ContextUtils;
+import org.apache.cxf.ws.rm.persistence.PersistenceUtils;
 import org.apache.cxf.ws.rm.persistence.RMMessage;
 import org.apache.cxf.ws.rm.persistence.RMStore;
 import org.apache.cxf.ws.rm.v200702.Identifier;
@@ -181,8 +184,9 @@ public class RMCaptureOutInterceptor extends AbstractRMInterceptor<Message>  {
             maps.getAction().setValue(constants.getCreateSequenceResponseAction());
         } else if (isPartialResponse && action == null
             && isResponseToAction(msg, constants.getSequenceAckAction())) {
-            Collection<SequenceAcknowledgement> acks = rmpsIn.getAcks();
-            if (acks.size() == 1) {
+            Collection<SequenceAcknowledgement> acks =
+                rmpsIn != null ? rmpsIn.getAcks() : null;
+            if (acks != null && acks.size() == 1) {
                 SourceSequence ss = source.getSequence(acks.iterator().next().getIdentifier());
                 if (ss != null && ss.allAcknowledged()) {
                     setAction(maps, constants.getTerminateSequenceAction());
@@ -253,8 +257,11 @@ public class RMCaptureOutInterceptor extends AbstractRMInterceptor<Message>  {
                 }
                 
                 // save message for potential retransmission
-                ByteArrayInputStream bis = cw.getOutputStream().createInputStream();
-                message.put(RMMessageConstants.SAVED_CONTENT, RewindableInputStream.makeRewindable(bis));
+                CachedOutputStream cos = new CachedOutputStream();
+                IOUtils.copyAndCloseInput(cw.getOutputStream().createInputStream(), cos);
+                cos.flush();
+                InputStream is = cos.getInputStream();
+                message.put(RMMessageConstants.SAVED_CONTENT, cos);
                 RMManager manager = getManager();
                 manager.getRetransmissionQueue().start();
                 manager.getRetransmissionQueue().addUnacknowledged(message);
@@ -272,7 +279,9 @@ public class RMCaptureOutInterceptor extends AbstractRMInterceptor<Message>  {
                             msg.setTo(maps.getTo().getValue());
                         }
                     }
-                    msg.setContent(bis);
+                    // serializes the message content and the attachments into
+                    // the RMMessage content
+                    PersistenceUtils.encodeRMContent(msg, message, is);
                     store.persistOutgoing(ss, msg);
                 }
                     

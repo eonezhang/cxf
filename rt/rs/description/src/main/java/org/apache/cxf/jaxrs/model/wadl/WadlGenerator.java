@@ -49,6 +49,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
+import javax.ws.rs.BeanParam;
 import javax.ws.rs.DefaultValue;
 import javax.ws.rs.Encoded;
 import javax.ws.rs.FormParam;
@@ -69,6 +70,7 @@ import javax.xml.bind.JAXBContext;
 import javax.xml.bind.annotation.XmlRootElement;
 import javax.xml.bind.annotation.XmlSeeAlso;
 import javax.xml.bind.annotation.XmlType;
+import javax.xml.datatype.XMLGregorianCalendar;
 import javax.xml.namespace.QName;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.stream.XMLStreamException;
@@ -202,6 +204,9 @@ public class WadlGenerator implements ContainerRequestFilter {
     @Override
     public void filter(ContainerRequestContext context) {
         Message m = JAXRSUtils.getCurrentMessage();
+        if (m == null) {
+            return;
+        }
         doFilter(context, m);
     }
 
@@ -283,7 +288,7 @@ public class WadlGenerator implements ContainerRequestFilter {
 
         
         MessageBodyWriter<?> jaxbWriter = (m != null && useJaxbContextForQnames) 
-            ? ServerProviderFactory.getInstance(m).getRegisteredJaxbWriter() : null;
+            ? ServerProviderFactory.getInstance(m).getDefaultJaxbWriter() : null;
         ResourceTypes resourceTypes = ResourceUtils.getAllRequestResponseTypes(cris, 
                                                                                useJaxbContextForQnames,
                                                                                jaxbWriter);
@@ -348,7 +353,7 @@ public class WadlGenerator implements ContainerRequestFilter {
         }
     }
 
-    private String getBaseURI(Message m, UriInfo ui) {
+    protected String getBaseURI(Message m, UriInfo ui) {
         EndpointInfo ei = m.getExchange().getEndpoint().getEndpointInfo();
         String publishedEndpointUrl = (String)ei.getProperty("publishedEndpointUrl");
         if (publishedEndpointUrl == null) {
@@ -827,11 +832,13 @@ public class WadlGenerator implements ContainerRequestFilter {
                                        ParameterType ...parameterTypes) {
         for (Method m : beanType.getMethods()) {
             if (m.getName().startsWith("set")) {
+                String propertyName = StringUtils.uncapitalize(m.getName().substring(3));
+                Field f = InjectionUtils.getDeclaredField(beanType, propertyName);
+                
                 for (ParameterType parameterType : parameterTypes) {
                     Class<? extends Annotation> annClass = getAnnotationFromParamType(parameterType);
                     Annotation annotation = m.getAnnotation(annClass);
                     if (annotation != null) {
-                        String propertyName = StringUtils.uncapitalize(m.getName().substring(3));
                         Parameter pm = new Parameter(parameterType, propertyName);
                         pm.setEncoded(m.getAnnotation(Encoded.class) != null);
                         DefaultValue dv = m.getAnnotation(DefaultValue.class);
@@ -846,12 +853,36 @@ public class WadlGenerator implements ContainerRequestFilter {
                                      propertyName,
                                      new Annotation[]{}, 
                                      isJson);
+                    } else if (f != null) {
+                        annotation = f.getAnnotation(annClass);
+                        if (annotation != null) {
+                            Parameter pm = new Parameter(parameterType, propertyName);
+                            pm.setEncoded(f.getAnnotation(Encoded.class) != null);
+                            DefaultValue dv = f.getAnnotation(DefaultValue.class);
+                            if (dv != null) {
+                                pm.setDefaultValue(dv.value());
+                            }
+                            doWriteParam(ori,
+                                         sb,
+                                         pm, 
+                                         f.getType(), 
+                                         f.getGenericType(), 
+                                         propertyName,
+                                         new Annotation[]{}, 
+                                         isJson);
+                        }
                         
                     }
+                }
+                if (m.getAnnotation(BeanParam.class) != null) {
+                    doWriteJaxrsBeanParam(sb, ori, m.getParameterTypes()[0], isJson, parameterTypes);
+                } else if (f != null && f.getAnnotation(BeanParam.class) != null) {
+                    doWriteJaxrsBeanParam(sb, ori, f.getType(), isJson, parameterTypes);
                 }
             }
         }
     }
+    
     private Class<? extends Annotation> getAnnotationFromParamType(ParameterType pt) {
         return PARAMETER_TYPE_MAP.get(pt);
     }
@@ -871,7 +902,9 @@ public class WadlGenerator implements ContainerRequestFilter {
             }
             Class<?> paramCls = entry.getValue();
             boolean isPrimitive = InjectionUtils.isPrimitive(paramCls) || paramCls.isEnum();
-            if (isPrimitive || Date.class.isAssignableFrom(paramCls) 
+            if (isPrimitive 
+                || Date.class.isAssignableFrom(paramCls)
+                || XMLGregorianCalendar.class.isAssignableFrom(paramCls)
                 || InjectionUtils.isSupportedCollectionOrArray(paramCls)) {
                 doWriteParam(ori, sb, entry.getKey(), paramCls, paramCls, name, new Annotation[] {}, isJson);
             } else if (!parentBeanClasses.contains(paramCls)) {
@@ -1224,14 +1257,17 @@ public class WadlGenerator implements ContainerRequestFilter {
         DOMSource domSource = new DOMSource(wadlDoc);
         // temporary workaround
         StringWriter stringWriter = new StringWriter();
-        TransformerFactory tFactory = TransformerFactory.newInstance();
-        Transformer transformer = tFactory.newTransformer();
+        TransformerFactory transformerFactory = TransformerFactory.newInstance();
+        transformerFactory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        Transformer transformer = transformerFactory.newTransformer();
         transformer.transform(domSource, new StreamResult(stringWriter));
         return stringWriter.toString();
     }
     private String transformLocally(Message m, UriInfo ui, Source source) throws Exception {
         InputStream is = ResourceUtils.getResourceStream(stylesheetReference, m.getExchange().getBus());
-        Transformer t = TransformerFactory.newInstance().newTemplates(new StreamSource(is)).newTransformer();
+        TransformerFactory transformerFactory = TransformerFactory.newInstance();
+        transformerFactory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        Transformer t = transformerFactory.newTemplates(new StreamSource(is)).newTransformer();
         t.setParameter("base.path", (String)m.get("http.base.path"));
         StringWriter stringWriter = new StringWriter();
         t.transform(source, new StreamResult(stringWriter));
@@ -1797,16 +1833,17 @@ public class WadlGenerator implements ContainerRequestFilter {
         if (is == null) {
             return;
         }
-        ByteArrayInputStream bis = IOUtils.loadIntoBAIS(is);
-        XMLSource source = new XMLSource(bis);
-        source.setBuffering();
-        String targetNs = source.getValue("/*/@targetNamespace");
+        try (ByteArrayInputStream bis = IOUtils.loadIntoBAIS(is)) {
+            XMLSource source = new XMLSource(bis);
+            source.setBuffering();
+            String targetNs = source.getValue("/*/@targetNamespace");
 
-        Map<String, String> nsMap = Collections.singletonMap("xs", Constants.URI_2001_SCHEMA_XSD);
-        String[] elementNames = source.getValues("/*/xs:element/@name", nsMap);
-        externalQnamesMap.put(targetNs, Arrays.asList(elementNames));
-        String schemaValue = source.getNode("/xs:schema", nsMap, String.class);
-        externalSchemasCache.add(schemaValue);
+            Map<String, String> nsMap = Collections.singletonMap("xs", Constants.URI_2001_SCHEMA_XSD);
+            String[] elementNames = source.getValues("/*/xs:element/@name", nsMap);
+            externalQnamesMap.put(targetNs, Arrays.asList(elementNames));
+            String schemaValue = source.getNode("/xs:schema", nsMap, String.class);
+            externalSchemasCache.add(schemaValue);
+        }
     }
 
     public void setUseJaxbContextForQnames(boolean checkJaxbOnly) {

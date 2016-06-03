@@ -126,6 +126,7 @@ public class AuthorizationCodeGrantHandler extends AbstractGrantHandler {
         
         // Delegate to the data provider to create the one
         AccessTokenRegistration reg = new AccessTokenRegistration();
+        reg.setGrantCode(grant.getCode());
         reg.setClient(client);
         reg.setGrantType(requestedGrant);
         reg.setSubject(grant.getSubject());
@@ -137,7 +138,9 @@ public class AuthorizationCodeGrantHandler extends AbstractGrantHandler {
             reg.setApprovedScope(Collections.emptyList());
         }
         reg.setAudiences(audiences);
+        reg.setResponseType(grant.getResponseType());
         reg.setClientCodeVerifier(codeVerifier);
+        reg.setGrantType(OAuthConstants.CODE_RESPONSE_TYPE);
         return getDataProvider().createAccessToken(reg);
     }
     

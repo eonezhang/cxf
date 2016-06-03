@@ -20,6 +20,7 @@
 package org.apache.cxf.ws.security.wss4j.policyhandlers;
 
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.logging.Level;
@@ -35,6 +36,7 @@ import org.apache.cxf.binding.soap.SoapMessage;
 import org.apache.cxf.common.util.StringUtils;
 import org.apache.cxf.helpers.CastUtils;
 import org.apache.cxf.interceptor.Fault;
+import org.apache.cxf.message.MessageUtils;
 import org.apache.cxf.ws.policy.AssertionInfoMap;
 import org.apache.cxf.ws.security.SecurityConstants;
 import org.apache.cxf.ws.security.policy.PolicyUtils;
@@ -77,7 +79,6 @@ import org.apache.wss4j.policy.model.SpnegoContextToken;
 import org.apache.wss4j.policy.model.SymmetricBinding;
 import org.apache.wss4j.policy.model.UsernameToken;
 import org.apache.wss4j.policy.model.X509Token;
-import org.apache.xml.security.utils.Base64;
 
 /**
  * 
@@ -544,7 +545,6 @@ public class SymmetricBindingHandler extends AbstractBindingBuilder {
                     encr.setEphemeralKey(encrTok.getSecret());
                     Crypto crypto = getEncryptionCrypto();
                     if (crypto != null) {
-                        this.message.getExchange().put(SecurityConstants.ENCRYPT_CRYPTO, crypto);
                         setEncryptionUser(encr, encrToken, false, crypto);
                     }
                     
@@ -552,6 +552,7 @@ public class SymmetricBindingHandler extends AbstractBindingBuilder {
                     encr.setEncryptSymmKey(false);
                     encr.setSymmetricEncAlgorithm(algorithmSuite.getAlgorithmSuiteType().getEncryption());
                     encr.setMGFAlgorithm(algorithmSuite.getAlgorithmSuiteType().getMGFAlgo());
+                    encr.setDigestAlgorithm(algorithmSuite.getAlgorithmSuiteType().getEncryptionDigest());
                     
                     if (encrToken instanceof IssuedToken || encrToken instanceof SpnegoContextToken
                         || encrToken instanceof SecureConversationToken) {
@@ -699,6 +700,13 @@ public class SymmetricBindingHandler extends AbstractBindingBuilder {
         AlgorithmSuiteType algType = sbinding.getAlgorithmSuite().getAlgorithmSuiteType();
         dkSign.setDigestAlgorithm(algType.getDigest());
         dkSign.setDerivedKeyLength(algType.getSignatureDerivedKeyLength() / 8);
+        
+        boolean includePrefixes = 
+            MessageUtils.getContextualBoolean(
+                message, SecurityConstants.ADD_INCLUSIVE_PREFIXES, true
+            );
+        dkSign.setAddInclusivePrefixes(includePrefixes);
+        
         if (tok.getSHA1() != null) {
             //Set the value type of the reference
             String tokenType = tok.getTokenType();
@@ -743,22 +751,24 @@ public class SymmetricBindingHandler extends AbstractBindingBuilder {
         
         dkSign.getParts().addAll(sigs);
         List<Reference> referenceList = dkSign.addReferencesToSign(sigs, secHeader);
-        
-        //Add elements to header
-        Element el = dkSign.getdktElement();
-        addDerivedKeyElement(el);
-        
-        //Do signature
-        if (bottomUpElement == null) {
-            dkSign.computeSignature(referenceList, false, null);
-        } else {
-            dkSign.computeSignature(referenceList, true, bottomUpElement);
+        if (!referenceList.isEmpty()) {
+            //Add elements to header
+            Element el = dkSign.getdktElement();
+            addDerivedKeyElement(el);
+            
+            //Do signature
+            if (bottomUpElement == null) {
+                dkSign.computeSignature(referenceList, false, null);
+            } else {
+                dkSign.computeSignature(referenceList, true, bottomUpElement);
+            }
+            bottomUpElement = dkSign.getSignatureElement();
+            
+            this.mainSigId = dkSign.getSignatureId();
+    
+            return dkSign.getSignatureValue();
         }
-        bottomUpElement = dkSign.getSignatureElement();
-        
-        this.mainSigId = dkSign.getSignatureId();
-
-        return dkSign.getSignatureValue();        
+        return null;
     }
     
     private byte[] doSignature(List<WSEncryptionPart> sigs,
@@ -857,6 +867,13 @@ public class SymmetricBindingHandler extends AbstractBindingBuilder {
             sig.setCustomTokenId(sigTokId);
             sig.setSecretKey(tok.getSecret());
             sig.setSignatureAlgorithm(sbinding.getAlgorithmSuite().getSymmetricSignature());
+            
+            boolean includePrefixes = 
+                MessageUtils.getContextualBoolean(
+                    message, SecurityConstants.ADD_INCLUSIVE_PREFIXES, true
+                );
+            sig.setAddInclusivePrefixes(includePrefixes);
+            
             AlgorithmSuiteType algType = sbinding.getAlgorithmSuite().getAlgorithmSuiteType();
             sig.setDigestAlgo(algType.getDigest());
             sig.setSigCanonicalization(sbinding.getAlgorithmSuite().getC14n().getValue());
@@ -870,17 +887,19 @@ public class SymmetricBindingHandler extends AbstractBindingBuilder {
             sig.prepare(saaj.getSOAPPart(), crypto, secHeader);
             sig.getParts().addAll(sigs);
             List<Reference> referenceList = sig.addReferencesToSign(sigs, secHeader);
-
-            //Do signature
-            if (bottomUpElement == null) {
-                sig.computeSignature(referenceList, false, null);
-            } else {
-                sig.computeSignature(referenceList, true, bottomUpElement);
+            if (!referenceList.isEmpty()) {
+                //Do signature
+                if (bottomUpElement == null) {
+                    sig.computeSignature(referenceList, false, null);
+                } else {
+                    sig.computeSignature(referenceList, true, bottomUpElement);
+                }
+                bottomUpElement = sig.getSignatureElement();
+    
+                this.mainSigId = sig.getId();
+                return sig.getSignatureValue();
             }
-            bottomUpElement = sig.getSignatureElement();
-
-            this.mainSigId = sig.getId();
-            return sig.getSignatureValue();
+            return null;
         }
     }
 
@@ -922,7 +941,7 @@ public class SymmetricBindingHandler extends AbstractBindingBuilder {
     private static String getSHA1(byte[] input) {
         try {
             byte[] digestBytes = KeyUtils.generateDigest(input);
-            return Base64.encode(digestBytes);
+            return Base64.getMimeEncoder().encodeToString(digestBytes);
         } catch (WSSecurityException e) {
             //REVISIT
         }

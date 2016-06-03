@@ -17,35 +17,36 @@
  * under the License.
  */
 package sample.rs.service;
+import java.util.Arrays;
+
+import org.apache.cxf.Bus;
 import org.apache.cxf.endpoint.Server;
 import org.apache.cxf.jaxrs.JAXRSServerFactoryBean;
-import org.apache.cxf.jaxrs.spring.JaxRsConfig;
-import org.apache.cxf.transport.servlet.CXFServlet;
+import org.apache.cxf.jaxrs.swagger.Swagger2Feature;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.context.embedded.ServletRegistrationBean;
-import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Import;
+
+import sample.rs.service.hello1.HelloService;
+import sample.rs.service.hello2.HelloService2;
 
 @SpringBootApplication
-@Import(JaxRsConfig.class)
 public class SampleRestApplication {
+    @Autowired
+    private Bus bus;
+
     public static void main(String[] args) {
         SpringApplication.run(SampleRestApplication.class, args);
     }
  
     @Bean
-    public ServletRegistrationBean servletRegistrationBean(ApplicationContext context) {
-        return new ServletRegistrationBean(new CXFServlet(), "/services/*");
-    }
- 
-    
-    @Bean
     public Server rsServer() {
         JAXRSServerFactoryBean endpoint = new JAXRSServerFactoryBean();
-        endpoint.setServiceBean(new HelloService());
-        endpoint.setAddress("/helloservice");
+        endpoint.setBus(bus);
+        endpoint.setServiceBeans(Arrays.asList(new HelloService(), new HelloService2()));
+        endpoint.setAddress("/");
+        endpoint.setFeatures(Arrays.asList(new Swagger2Feature()));
         return endpoint.create();
     }
  

@@ -38,6 +38,7 @@ import org.apache.cxf.binding.soap.SoapMessage;
 import org.apache.cxf.common.logging.LogUtils;
 import org.apache.cxf.helpers.CastUtils;
 import org.apache.cxf.interceptor.Fault;
+import org.apache.cxf.message.MessageUtils;
 import org.apache.cxf.ws.policy.AssertionInfo;
 import org.apache.cxf.ws.policy.AssertionInfoMap;
 import org.apache.cxf.ws.security.SecurityConstants;
@@ -494,6 +495,7 @@ public class AsymmetricBindingHandler extends AbstractBindingBuilder {
                     encr.setSymmetricEncAlgorithm(algType.getEncryption());
                     encr.setKeyEncAlgo(algType.getAsymmetricKeyWrap());
                     encr.setMGFAlgorithm(algType.getMGFAlgo());
+                    encr.setDigestAlgorithm(algType.getEncryptionDigest());
                     encr.prepare(saaj.getSOAPPart(), crypto);
                     
                     Element encryptedKeyElement = encr.getEncryptedKeyElement();
@@ -509,10 +511,14 @@ public class AsymmetricBindingHandler extends AbstractBindingBuilder {
                                 this.insertBeforeBottomUp(attachment);
                             }
                         }
-                        this.addEncryptedKeyElement(encryptedKeyElement);
+                        if (refList != null || (attachments != null && !attachments.isEmpty())) {
+                            this.addEncryptedKeyElement(encryptedKeyElement);
+                        }
                     } else {
                         Element refList = encr.encryptForRef(null, encrParts);
-                        this.addEncryptedKeyElement(encryptedKeyElement);
+                        if (refList != null || (attachments != null && !attachments.isEmpty())) {
+                            this.addEncryptedKeyElement(encryptedKeyElement);
+                        }
                         
                         // Add internal refs
                         if (refList != null) {
@@ -649,6 +655,12 @@ public class AsymmetricBindingHandler extends AbstractBindingBuilder {
             dkSign.setCustomValueType(WSConstants.SOAPMESSAGE_NS11 + "#"
                     + WSConstants.ENC_KEY_VALUE_TYPE);
             
+            boolean includePrefixes = 
+                MessageUtils.getContextualBoolean(
+                    message, SecurityConstants.ADD_INCLUSIVE_PREFIXES, true
+                );
+            dkSign.setAddInclusivePrefixes(includePrefixes);
+            
             try {
                 dkSign.prepare(saaj.getSOAPPart(), secHeader);
 
@@ -671,20 +683,21 @@ public class AsymmetricBindingHandler extends AbstractBindingBuilder {
                 dkSign.getParts().addAll(sigParts);
 
                 List<Reference> referenceList = dkSign.addReferencesToSign(sigParts, secHeader);
-
-                // Add elements to header
-                addDerivedKeyElement(dkSign.getdktElement());
-                
-                //Do signature
-                if (bottomUpElement == null) {
-                    dkSign.computeSignature(referenceList, false, null);
-                } else {
-                    dkSign.computeSignature(referenceList, true, bottomUpElement);
+                if (!referenceList.isEmpty()) {
+                    // Add elements to header
+                    addDerivedKeyElement(dkSign.getdktElement());
+                    
+                    //Do signature
+                    if (bottomUpElement == null) {
+                        dkSign.computeSignature(referenceList, false, null);
+                    } else {
+                        dkSign.computeSignature(referenceList, true, bottomUpElement);
+                    }
+                    bottomUpElement = dkSign.getSignatureElement();
+                    addSig(dkSign.getSignatureValue());
+                    
+                    mainSigId = dkSign.getSignatureId();
                 }
-                bottomUpElement = dkSign.getSignatureElement();
-                addSig(dkSign.getSignatureValue());
-                
-                mainSigId = dkSign.getSignatureId();
             } catch (Exception ex) {
                 LOG.log(Level.FINE, ex.getMessage(), ex);
                 throw new Fault(ex);
@@ -706,24 +719,26 @@ public class AsymmetricBindingHandler extends AbstractBindingBuilder {
             }
 
             List<Reference> referenceList = sig.addReferencesToSign(sigParts, secHeader);
-            //Do signature
-            if (bottomUpElement == null) {
-                sig.computeSignature(referenceList, false, null);
-            } else {
-                sig.computeSignature(referenceList, true, bottomUpElement);
-            }
-            bottomUpElement = sig.getSignatureElement();
-            
-            if (!abinding.isProtectTokens()) {
-                Element bstElement = sig.getBinarySecurityTokenElement();
-                if (bstElement != null) {
-                    secHeader.getSecurityHeader().insertBefore(bstElement, bottomUpElement);
+            if (!referenceList.isEmpty()) {
+                //Do signature
+                if (bottomUpElement == null) {
+                    sig.computeSignature(referenceList, false, null);
+                } else {
+                    sig.computeSignature(referenceList, true, bottomUpElement);
                 }
+                bottomUpElement = sig.getSignatureElement();
+                
+                if (!abinding.isProtectTokens()) {
+                    Element bstElement = sig.getBinarySecurityTokenElement();
+                    if (bstElement != null) {
+                        secHeader.getSecurityHeader().insertBefore(bstElement, bottomUpElement);
+                    }
+                }
+                
+                addSig(sig.getSignatureValue());
+                            
+                mainSigId = sig.getId();
             }
-            
-            addSig(sig.getSignatureValue());
-                        
-            mainSigId = sig.getId();
         }
     }
 

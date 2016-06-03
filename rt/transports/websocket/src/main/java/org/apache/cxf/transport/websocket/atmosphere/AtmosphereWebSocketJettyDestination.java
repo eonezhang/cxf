@@ -41,11 +41,10 @@ import org.apache.cxf.transport.http_jetty.JettyHTTPServerEngineFactory;
 import org.apache.cxf.transport.websocket.WebSocketDestinationService;
 import org.atmosphere.cpr.ApplicationConfig;
 import org.atmosphere.cpr.AtmosphereFramework;
-import org.atmosphere.cpr.AtmosphereRequest;
+import org.atmosphere.cpr.AtmosphereRequestImpl;
 import org.atmosphere.cpr.AtmosphereResource;
-import org.atmosphere.cpr.AtmosphereResponse;
+import org.atmosphere.cpr.AtmosphereResponseImpl;
 import org.atmosphere.handler.AbstractReflectorAtmosphereHandler;
-import org.atmosphere.util.Utils;
 import org.eclipse.jetty.server.Request;
 
 
@@ -66,6 +65,8 @@ public class AtmosphereWebSocketJettyDestination extends JettyHTTPDestination im
         framework.addInitParameter(ApplicationConfig.PROPERTY_SESSION_SUPPORT, "true");
         framework.addInitParameter(ApplicationConfig.WEBSOCKET_SUPPORT, "true");
         framework.addInitParameter(ApplicationConfig.WEBSOCKET_PROTOCOL_EXECUTION, "true");
+        // workaround for atmosphere's jsr356 initialization requiring servletConfig
+        framework.addInitParameter(ApplicationConfig.WEBSOCKET_SUPPRESS_JSR356, "true");
         AtmosphereUtils.addInterceptors(framework, bus);
         framework.addAtmosphereHandler("/", new DestinationHandler());
         framework.init();
@@ -119,10 +120,10 @@ public class AtmosphereWebSocketJettyDestination extends JettyHTTPDestination im
         @Override
         public void handle(String target, Request baseRequest, HttpServletRequest request,
                            HttpServletResponse response) throws IOException, ServletException {
-            if (Utils.webSocketEnabled(request)) {
+            if (AtmosphereUtils.useAtmosphere(request)) {
                 try {
-                    framework.doCometSupport(AtmosphereRequest.wrap(request), 
-                                             AtmosphereResponse.wrap(response));
+                    framework.doCometSupport(AtmosphereRequestImpl.wrap(request), 
+                                             AtmosphereResponseImpl.wrap(response));
                     baseRequest.setHandled(true);
                 } catch (ServletException e) {
                     throw new IOException(e);

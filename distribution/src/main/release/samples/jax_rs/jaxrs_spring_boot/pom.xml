@@ -12,28 +12,11 @@
     
     <properties>
         <cxf.version>3.2.0-SNAPSHOT</cxf.version>
-        <jetty.version>8.1.5.v20120716</jetty.version>
     </properties>
     <dependencies>
         <dependency>
-            <groupId>cglib</groupId>
-            <artifactId>cglib-nodep</artifactId>
-            <version>2.2.2</version>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
-            <version>1.2.3.RELEASE</version>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <version>1.2.3.RELEASE</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>org.apache.cxf</groupId>
-            <artifactId>cxf-rt-frontend-jaxrs</artifactId>
+            <artifactId>cxf-spring-boot-starter-jaxrs</artifactId>
             <version>${cxf.version}</version>
         </dependency>
         <dependency>
@@ -43,21 +26,26 @@
         </dependency>
         <dependency>
             <groupId>org.apache.cxf</groupId>
-            <artifactId>cxf-rt-transports-http</artifactId>
-            <version>${cxf.version}</version>
-        </dependency>
-                <dependency>
-            <groupId>org.apache.cxf</groupId>
             <artifactId>cxf-rt-rs-service-description</artifactId>
             <version>${cxf.version}</version>
         </dependency>
-
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-            <version>1.2.3.RELEASE</version>
+            <groupId>io.swagger</groupId>
+            <artifactId>swagger-jaxrs</artifactId>
+            <version>1.5.4</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>javax.ws.rs</groupId>
+                    <artifactId>jsr311-api</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
-
+        <dependency>
+            <groupId>cglib</groupId>
+            <artifactId>cglib-nodep</artifactId>
+            <version>2.2.2</version>
+        </dependency>
+        
     </dependencies>
     <build>
       <plugins>
@@ -66,10 +54,6 @@
            <artifactId>spring-boot-maven-plugin</artifactId>
            <configuration>
                <mainClass>sample.rs.service.SampleRestApplication</mainClass>
-               <!-- 
-               <mainClass>sample.rs.service.SampleScanRestApplication</mainClass>
-               <mainClass>sample.rs.service.SampleScanRestApplication2</mainClass>
-               --> 
            </configuration>  
         </plugin>
         <plugin>

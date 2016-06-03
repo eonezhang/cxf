@@ -31,6 +31,7 @@ import org.apache.cxf.rs.security.oauth2.grants.code.DefaultEHCacheCodeDataProvi
 import org.apache.cxf.rs.security.oauth2.provider.OAuthServiceException;
 import org.apache.cxf.rs.security.oauth2.saml.Constants;
 import org.apache.cxf.rt.security.crypto.CryptoUtils;
+import org.apache.xml.security.utils.ClassLoaderUtils;
 
 /**
  * Extend the DefaultEHCacheCodeDataProvider to allow refreshing of tokens
@@ -45,6 +46,7 @@ public class OAuthDataProviderImpl extends DefaultEHCacheCodeDataProvider {
         client.getAllowedGrantTypes().add("authorization_code");
         client.getAllowedGrantTypes().add("refresh_token");
         client.getAllowedGrantTypes().add("implicit");
+        client.getAllowedGrantTypes().add("hybrid");
         client.getAllowedGrantTypes().add("password");
         client.getAllowedGrantTypes().add("client_credentials");
         client.getAllowedGrantTypes().add("urn:ietf:params:oauth:grant-type:saml2-bearer");
@@ -56,6 +58,7 @@ public class OAuthDataProviderImpl extends DefaultEHCacheCodeDataProvider {
         client.getRegisteredScopes().add("read_book");
         client.getRegisteredScopes().add("create_book");
         client.getRegisteredScopes().add("create_image");
+        client.getRegisteredScopes().add("openid");
         
         this.setClient(client);
         
@@ -69,6 +72,7 @@ public class OAuthDataProviderImpl extends DefaultEHCacheCodeDataProvider {
         client.getRegisteredAudiences().add("https://localhost:" + servicePort 
                                             + "/secured/bookstore/books");
         client.getRegisteredAudiences().add("https://127.0.0.1/test");
+        client.getRegisteredScopes().add("openid");
         
         this.setClient(client);
         
@@ -81,6 +85,7 @@ public class OAuthDataProviderImpl extends DefaultEHCacheCodeDataProvider {
         
         client.getRegisteredAudiences().add("https://localhost:" + servicePort 
                                             + "/securedxyz/bookstore/books");
+        client.getRegisteredScopes().add("openid");
         
         this.setClient(client);
         
@@ -105,8 +110,9 @@ public class OAuthDataProviderImpl extends DefaultEHCacheCodeDataProvider {
     }
     
     private Certificate loadCert() throws Exception {
-        InputStream is = this.getClass().getResourceAsStream("/org/apache/cxf/systest/http/resources/Truststore.jks");
-        return CryptoUtils.loadCertificate(is, new char[]{'p', 'a', 's', 's', 'w', 'o', 'r', 'd'}, "morpit", null);
+        try (InputStream is = ClassLoaderUtils.getResourceAsStream("keys/Truststore.jks", this.getClass())) {
+            return CryptoUtils.loadCertificate(is, new char[]{'p', 'a', 's', 's', 'w', 'o', 'r', 'd'}, "morpit", null);
+        }
     }
     
     @Override
@@ -175,6 +181,9 @@ public class OAuthDataProviderImpl extends DefaultEHCacheCodeDataProvider {
                 uris.add(partnerAddress);
                 permission.setUris(uris);
                 
+                permissions.add(permission);
+            } else if ("openid".equals(requestedScope)) {
+                OAuthPermission permission = new OAuthPermission("openid", "Authenticate user");
                 permissions.add(permission);
             } else {
                 throw new OAuthServiceException("invalid_scope");

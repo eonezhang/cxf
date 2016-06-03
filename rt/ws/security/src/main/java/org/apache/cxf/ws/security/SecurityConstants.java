@@ -139,6 +139,12 @@ public final class SecurityConstants extends org.apache.cxf.rt.security.Security
      * hence set this configuration option to "false" in this case.
      */
     public static final String USE_STR_TRANSFORM = "ws-security.use.str.transform";
+    
+    /**
+     * Whether to add an InclusiveNamespaces PrefixList as a CanonicalizationMethod child when generating 
+     * Signatures using WSConstants.C14N_EXCL_OMIT_COMMENTS. Default is "true".
+     */
+    public static final String ADD_INCLUSIVE_PREFIXES = "ws-security.add.inclusive.prefixes";
 
     //
     // Non-boolean WS-Security Configuration parameters
@@ -276,6 +282,14 @@ public final class SecurityConstants extends org.apache.cxf.rt.security.Security
      */
     public static final String DELEGATED_CREDENTIAL = "ws-security.delegated.credential";
     
+    /**
+     * A WSS4JSecurityContextCreator implementation that is used to create a CXF SecurityContext
+     * from the set of WSS4J processing results. The default implementation is the
+     * DefaultWSS4JSecurityContextCreator. This configuration tag allows the user to plug in
+     * a custom way of setting up the CXF SecurityContext.
+     */
+    public static final String SECURITY_CONTEXT_CREATOR = "ws-security.security.context.creator";
+    
     //
     // Validator implementations for validating received security tokens
     //
@@ -397,7 +411,7 @@ public final class SecurityConstants extends org.apache.cxf.rt.security.Security
             CACHE_IDENTIFIER, DELEGATED_CREDENTIAL, KERBEROS_USE_CREDENTIAL_DELEGATION, 
             KERBEROS_IS_USERNAME_IN_SERVICENAME_FORM, KERBEROS_REQUEST_CREDENTIAL_DELEGATION, 
             POLICY_VALIDATOR_MAP, STORE_BYTES_IN_ATTACHMENT, USE_ATTACHMENT_ENCRYPTION_CONTENT_ONLY_TRANSFORM,
-            SYMMETRIC_SIGNATURE_ALGORITHM
+            SYMMETRIC_SIGNATURE_ALGORITHM, SECURITY_CONTEXT_CREATOR
         }));
         for (String commonProperty : COMMON_PROPERTIES) {
             s.add(commonProperty);

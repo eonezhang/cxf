@@ -84,6 +84,7 @@ import org.apache.cxf.resource.ResourceManager;
 import org.apache.cxf.service.Service;
 import org.apache.cxf.service.ServiceImpl;
 import org.apache.cxf.service.ServiceModelSchemaValidator;
+import org.apache.cxf.service.factory.FactoryBeanListener;
 import org.apache.cxf.service.factory.FactoryBeanListener.Event;
 import org.apache.cxf.service.factory.ServiceConstructionException;
 import org.apache.cxf.service.factory.SimpleMethodDispatcher;
@@ -355,7 +356,8 @@ public class ReflectionServiceFactoryBean extends org.apache.cxf.service.factory
     }
 
     public void updateBindingOperation(BindingOperationInfo boi) {
-        //nothing
+        Method m = getMethodDispatcher().getMethod(boi);
+        sendEvent(FactoryBeanListener.Event.BINDING_OPERATION_CREATED, boi.getBinding(), boi, m);
     }
 
     public Endpoint createEndpoint(EndpointInfo ei) throws EndpointException {
@@ -1297,9 +1299,11 @@ public class ReflectionServiceFactoryBean extends org.apache.cxf.service.factory
 
         wrappedMessage.getFirstMessagePart().setXmlSchema(el);
 
-        XmlSchemaComplexType ct = new XmlSchemaComplexType(schema, true);
+        boolean anonymousType = isAnonymousWrapperTypes();
+        XmlSchemaComplexType ct = new XmlSchemaComplexType(schema,
+                /*CXF-6783: don't create anonymous top-level types*/!anonymousType);
 
-        if (!isAnonymousWrapperTypes()) {
+        if (!anonymousType) {
             ct.setName(wrapperName.getLocalPart());
             el.setSchemaTypeName(wrapperName);
         }

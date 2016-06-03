@@ -18,8 +18,15 @@
  */
 package org.apache.cxf.rs.security.oauth2.grants.code;
 
-import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
+
+import javax.persistence.ElementCollection;
+import javax.persistence.Entity;
+import javax.persistence.ManyToOne;
+import javax.persistence.MapKeyColumn;
 
 import org.apache.cxf.rs.security.oauth2.common.Client;
 import org.apache.cxf.rs.security.oauth2.common.UserSubject;
@@ -29,19 +36,22 @@ import org.apache.cxf.rs.security.oauth2.utils.OAuthUtils;
 /**
  * The Authorization Code Grant representation visible to the server
  */
+@Entity
 public class ServerAuthorizationCodeGrant extends AuthorizationCodeGrant {
     private static final long serialVersionUID = -5004608901535459036L;
     
     private long issuedAt;
     private long expiresIn;
     private Client client;
-    private List<String> approvedScopes = Collections.emptyList();
-    private List<String> requestedScopes = Collections.emptyList();
+    private List<String> approvedScopes = new LinkedList<String>();
+    private List<String> requestedScopes = new LinkedList<String>();
     private UserSubject subject;
     private String audience;
+    private String responseType;
     private String clientCodeChallenge;
     private String nonce;
     private boolean preauthorizedTokenAvailable;
+    private Map<String, String> extraProperties = new LinkedHashMap<String, String>();
     
     public ServerAuthorizationCodeGrant() {
         
@@ -91,6 +101,7 @@ public class ServerAuthorizationCodeGrant extends AuthorizationCodeGrant {
      * Returns the reference to {@link Client}
      * @return the client
      */
+    @ManyToOne
     public Client getClient() {
         return client;
     }
@@ -113,7 +124,7 @@ public class ServerAuthorizationCodeGrant extends AuthorizationCodeGrant {
      * Gets the scopes explicitly approved by the end user
      * @return the approved scopes
      */
-    
+    @ElementCollection
     public List<String> getApprovedScopes() {
         return approvedScopes;
     }
@@ -131,6 +142,7 @@ public class ServerAuthorizationCodeGrant extends AuthorizationCodeGrant {
      * Gets the user subject representing the end user
      * @return the subject
      */
+    @ManyToOne
     public UserSubject getSubject() {
         return subject;
     }
@@ -151,6 +163,7 @@ public class ServerAuthorizationCodeGrant extends AuthorizationCodeGrant {
         this.clientCodeChallenge = clientCodeChallenge;
     }
 
+    @ElementCollection
     public List<String> getRequestedScopes() {
         return requestedScopes;
     }
@@ -173,5 +186,23 @@ public class ServerAuthorizationCodeGrant extends AuthorizationCodeGrant {
 
     public void setPreauthorizedTokenAvailable(boolean preauthorizedTokenAvailable) {
         this.preauthorizedTokenAvailable = preauthorizedTokenAvailable;
+    }
+
+    @ElementCollection
+    @MapKeyColumn(name = "extraPropName")
+    public Map<String, String> getExtraProperties() {
+        return extraProperties;
+    }
+
+    public void setExtraProperties(Map<String, String> extraProperties) {
+        this.extraProperties = extraProperties;
+    }
+
+    public String getResponseType() {
+        return responseType;
+    }
+
+    public void setResponseType(String responseType) {
+        this.responseType = responseType;
     }
 }

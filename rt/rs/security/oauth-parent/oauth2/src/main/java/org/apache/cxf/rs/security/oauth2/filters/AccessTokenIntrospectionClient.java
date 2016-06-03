@@ -19,6 +19,7 @@
 package org.apache.cxf.rs.security.oauth2.filters;
 
 import java.util.Collections;
+import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -32,6 +33,7 @@ import org.apache.cxf.jaxrs.impl.MetadataMap;
 import org.apache.cxf.rs.security.oauth2.common.AccessTokenValidation;
 import org.apache.cxf.rs.security.oauth2.common.OAuthPermission;
 import org.apache.cxf.rs.security.oauth2.common.TokenIntrospection;
+import org.apache.cxf.rs.security.oauth2.common.UserSubject;
 import org.apache.cxf.rs.security.oauth2.provider.AccessTokenValidator;
 import org.apache.cxf.rs.security.oauth2.provider.OAuthServiceException;
 import org.apache.cxf.rs.security.oauth2.utils.OAuthConstants;
@@ -67,9 +69,11 @@ public class AccessTokenIntrospectionClient implements AccessTokenValidator {
         }
         if (response.getIat() != null) {
             atv.setTokenIssuedAt(response.getIat());
+        } else {
+            atv.setTokenIssuedAt(new Date().getTime());
         }
         if (response.getExp() != null) {
-            atv.setTokenLifetime(response.getExp() - response.getIat());
+            atv.setTokenLifetime(response.getExp() - atv.getTokenIssuedAt());
         }
         if (!StringUtils.isEmpty(response.getAud())) {
             atv.setAudiences(response.getAud());
@@ -87,7 +91,9 @@ public class AccessTokenIntrospectionClient implements AccessTokenValidator {
             }
             atv.setTokenScopes(perms);
         }
-        
+        if (response.getUsername() != null) {
+            atv.setTokenSubject(new UserSubject(response.getUsername()));
+        }
         return atv;
     }
 

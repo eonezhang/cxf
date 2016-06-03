@@ -19,6 +19,7 @@
 package org.apache.cxf.rs.security.oauth2.grants.code;
 
 import org.apache.cxf.rs.security.oauth2.common.Client;
+import org.apache.cxf.rs.security.oauth2.common.UserSubject;
 import org.apache.cxf.rs.security.oauth2.provider.AbstractOAuthDataProvider;
 import org.apache.cxf.rs.security.oauth2.provider.OAuthServiceException;
 
@@ -59,9 +60,19 @@ public abstract class AbstractCodeDataProvider extends AbstractOAuthDataProvider
         grant.setRequestedScopes(reg.getRequestedScope());
         grant.setApprovedScopes(reg.getApprovedScope());
         grant.setAudience(reg.getAudience());
+        grant.setResponseType(reg.getResponseType());
         grant.setClientCodeChallenge(reg.getClientCodeChallenge());
         grant.setNonce(reg.getNonce());
+        grant.getExtraProperties().putAll(reg.getExtraProperties());
         return grant;
     }
     protected abstract void saveCodeGrant(ServerAuthorizationCodeGrant grant);
+    
+    public static boolean isCodeMatched(ServerAuthorizationCodeGrant grant, Client c, UserSubject sub) {
+        if (c == null || grant.getClient().getClientId().equals(c.getClientId())) {
+            UserSubject grantSub = grant.getSubject();
+            return sub == null || grantSub != null && grantSub.getLogin().equals(sub.getLogin());
+        }
+        return false;
+    }
 }

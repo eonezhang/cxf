@@ -94,7 +94,7 @@ public class UriBuilderImpl extends UriBuilder implements Cloneable {
         }
         for (int i = 0; i < values.length; i++) {
             if (values[i] == null) {
-                throw new IllegalArgumentException("Template parameter value is set to null");
+                throw new IllegalArgumentException("Template parameter value at position " + i + " is set to null");
             }
         }
         
@@ -291,7 +291,7 @@ public class UriBuilderImpl extends UriBuilder implements Cloneable {
             ? Collections.<String>emptySet() : new HashSet<String>();
         for (String var : uniqueVars) {
             
-            boolean resolvedPathVarHasToBeEncoded = !isQuery && alreadyResolvedTsPathEnc.containsKey(var);
+            boolean resolvedPathVarHasToBeEncoded = alreadyResolvedTsPathEnc.containsKey(var);
             boolean varValueHasToBeEncoded = resolvedPathVarHasToBeEncoded || alreadyResolvedTs.containsKey(var);
             
             Map<String, Object> resolved = !varValueHasToBeEncoded ? alreadyResolvedTsEnc 
@@ -920,7 +920,17 @@ public class UriBuilderImpl extends UriBuilder implements Cloneable {
             }
             
         }
+        String rawQuery = null;
+        index = uri.indexOf("?");
+        if (index != -1) {
+            rawQuery = uri.substring(index + 1);
+            uri = uri.substring(0, index);
+        }
         setPathAndMatrix(uri);
+        if (rawQuery != null) {
+            query = JAXRSUtils.getStructuredParams(rawQuery, "&", false, true);
+        }
+        
         return this;
     }
     

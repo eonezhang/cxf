@@ -18,8 +18,10 @@
  */
 package org.apache.cxf.rs.security.oauth2.common;
 
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Captures the information associated with the access token request.
@@ -33,6 +35,9 @@ public class AccessTokenRegistration {
     private List<String> audiences = new LinkedList<String>();
     private String nonce;
     private String clientCodeVerifier;
+    private String responseType;
+    private String grantCode;
+    private Map<String, String> extraProperties = new LinkedHashMap<String, String>();
     
     /**
      * Sets the {@link Client} instance
@@ -137,5 +142,45 @@ public class AccessTokenRegistration {
 
     public void setNonce(String nonce) {
         this.nonce = nonce;
+    }
+
+    /**
+     * Set the response type
+     * @param responseType the response type
+     */
+    public void setResponseType(String responseType) {
+        this.responseType = responseType;
+    }
+
+    /**
+     * Get the response type
+     * @return the response type, null if no redirection flow was used
+     */
+    public String getResponseType() {
+        return responseType;
+    }
+    
+    /**
+     * Set the grant code which was used to request the token
+     * @param grantCode the grant code
+     */
+    public void setGrantCode(String grantCode) {
+        this.grantCode = grantCode;
+    }
+
+    /**
+     * Get the grant code
+     * @return the grant code, null if no authorization code grant was used
+     */
+    public String getGrantCode() {
+        return grantCode;
+    }
+    
+    public Map<String, String> getExtraProperties() {
+        return extraProperties;
+    }
+
+    public void setExtraProperties(Map<String, String> extraProperties) {
+        this.extraProperties = extraProperties;
     }
 }

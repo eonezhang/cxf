@@ -28,12 +28,14 @@ import javax.ws.rs.core.UriBuilder;
 import javax.ws.rs.core.UriInfo;
 
 import org.apache.cxf.common.util.StringUtils;
+import org.apache.cxf.jaxrs.json.basic.JsonMapObjectReaderWriter;
 import org.apache.cxf.jaxrs.utils.ExceptionUtils;
 import org.apache.cxf.rs.security.oauth2.client.ClientCodeRequestFilter;
 import org.apache.cxf.rs.security.oauth2.client.ClientTokenContext;
 import org.apache.cxf.rs.security.oauth2.common.ClientAccessToken;
 import org.apache.cxf.rs.security.oauth2.provider.OAuthServiceException;
 import org.apache.cxf.rs.security.oauth2.utils.OAuthConstants;
+import org.apache.cxf.rs.security.oidc.common.ClaimsRequest;
 import org.apache.cxf.rs.security.oidc.common.IdToken;
 
 public class OidcClientCodeRequestFilter extends ClientCodeRequestFilter {
@@ -58,13 +60,16 @@ public class OidcClientCodeRequestFilter extends ClientCodeRequestFilter {
     @Override
     protected ClientTokenContext createTokenContext(ContainerRequestContext rc, 
                                                     ClientAccessToken at,
+                                                    MultivaluedMap<String, String> requestParams,
                                                     MultivaluedMap<String, String> state) {
         if (rc.getSecurityContext() instanceof OidcSecurityContext) {
             return ((OidcSecurityContext)rc.getSecurityContext()).getOidcContext();
         }
         OidcClientTokenContextImpl ctx = new OidcClientTokenContextImpl();
         if (at != null) {
-            IdToken idToken = idTokenReader.getIdToken(at, getConsumer());
+            IdToken idToken = idTokenReader.getIdToken(at, 
+                                  requestParams.getFirst(OAuthConstants.AUTHORIZATION_CODE_VALUE),
+                                  getConsumer());
             // Validate the properties set up at the redirection time.
             validateIdToken(idToken, state);
             
@@ -169,6 +174,10 @@ public class OidcClientCodeRequestFilter extends ClientCodeRequestFilter {
         this.maxAgeOffset = maxAgeOffset;
     }
 
+    public void setClaimsRequest(ClaimsRequest claimsRequest) {
+        setClaims(new JsonMapObjectReaderWriter().toJson(claimsRequest));
+    }
+    
     public void setClaims(String claims) {
         this.claims = claims;
     }
